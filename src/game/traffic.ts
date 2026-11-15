@@ -164,7 +164,8 @@ export class Traffic {
     const netCars = this.cars.filter((c) => !c.line).length;
     if (this.spawnT <= 0 && netCars < this.max) {
       this.spawnT = 0.25;
-      this.spawn(px, pz);
+      const n = netCars < this.max / 2 ? 5 : 1;
+      for (let i = 0; i < n; i++) this.spawn(px, pz);
     }
     this.updateLineCars(px, pz, lines);
     for (const c of [...this.cars]) {
@@ -181,7 +182,9 @@ export class Traffic {
           this.remove(c);
           continue;
         }
-        const limit = Math.min((SPEED_LIMIT[e.cls] ?? 50) / 3.6, c.spec.vmax * 0.9);
+        if (e.urban === undefined) e.urban = this.world.buildingVolume((e.a.x + e.b.x) / 2, (e.a.z + e.b.z) / 2, 100) > 40000;
+        const lim = e.urban && e.cls !== 'motorway' && e.cls !== 'trunk' ? Math.min(50, SPEED_LIMIT[e.cls] ?? 50) : SPEED_LIMIT[e.cls] ?? 50;
+        const limit = Math.min(lim / 3.6, c.spec.vmax * 0.9);
         const remain = e.len - c.s;
         const turn = this.turnAhead(c);
         const cornerV = turn < 0.25 ? limit : Math.max(4, 14 - turn * 7);

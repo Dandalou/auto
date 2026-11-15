@@ -168,13 +168,13 @@ function treeGeometries(): THREE.BufferGeometry[] {
     return m;
   };
   const conifer = merge([
-    trunk(2.2, 0.28),
+    trunk(2.2, 0.16),
     shade(colorize(new THREE.ConeGeometry(2.3, 5.2, 6).translate(0, 4.2, 0), W), 1.6, 9.9),
     shade(colorize(new THREE.ConeGeometry(1.6, 4.6, 6).translate(0, 7.6, 0), W), 1.6, 9.9),
   ]);
   const crown = new THREE.IcosahedronGeometry(2.9, 0);
   crown.scale(1, 0.9, 1);
-  const deciduous = merge([trunk(3.2, 0.3), shade(colorize(crown.translate(0, 5.6, 0), W), 3.2, 8.2)]);
+  const deciduous = merge([trunk(3.2, 0.17), shade(colorize(crown.translate(0, 5.6, 0), W), 3.2, 8.2)]);
   const bush = merge([shade(colorize(new THREE.IcosahedronGeometry(1.0, 0).scale(1.2, 0.8, 1.2).translate(0, 0.6, 0), W), -0.2, 1.4)]);
   return [conifer, deciduous, bush];
 }

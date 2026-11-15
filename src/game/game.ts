@@ -13,6 +13,7 @@ import { BusJob, type Job, type JobCtx } from './jobs';
 import { buildPerson, buildVehicleModel, updateSign, type VehicleModel } from './models';
 import { defaultState, formatMoney, level, loadState, saveState, type SaveState } from './state';
 import { Traffic } from './traffic';
+import { Pedestrians } from './pedestrians';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
@@ -30,6 +31,7 @@ export class Game {
   readonly world: World;
   readonly env: Environment;
   readonly traffic: Traffic;
+  readonly pedestrians: Pedestrians;
   readonly audio = new AudioFx();
   readonly input: Input;
   readonly minimap: Minimap;
@@ -59,6 +61,8 @@ export class Game {
   private lastTime = performance.now();
   private loadStart = performance.now();
   private fps = 60;
+  private pixelRatio = Math.min(window.devicePixelRatio, 1.75);
+  private perfT = 0;
   private crashCool = 0;
   location = { place: '', street: '' };
   private labelEls = new Map<string, { el: HTMLDivElement; x: number; z: number; y: number }>();
@@ -67,7 +71,7 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -79,6 +83,8 @@ export class Game {
     this.env = new Environment(this.scene, this.renderer);
     this.traffic = new Traffic(this.world);
     this.scene.add(this.traffic.group);
+    this.pedestrians = new Pedestrians(this.world);
+    this.scene.add(this.pedestrians.group);
     this.input = new Input(canvas);
     this.minimap = new Minimap($('minimap') as HTMLCanvasElement);
     const start = lonLatToWorld(CITIES[0].lon, CITIES[0].lat);
@@ -138,6 +144,7 @@ export class Game {
     this.env.timeSpeed = s.timeSpeed;
     this.audio.enabled = s.sound;
     this.traffic.max = q.radius >= 2 ? 28 : 14;
+    if (this.pedestrians) this.pedestrians.max = q.radius >= 2 ? 30 : 15;
   }
 
   resize() {
@@ -163,6 +170,7 @@ export class Game {
     this.walker.z = z;
     this.pendingSnap = snap;
     this.traffic.clear();
+    this.pedestrians.clear();
     this.world.rebase(x, z);
     this.camInit = false;
     $('loading').classList.remove('hidden', 'fade');
@@ -172,7 +180,8 @@ export class Game {
 
   /** Najde nejbližší silnici a postaví na ni vozidlo po směru jízdy. */
   snapToRoad(x: number, z: number): { x: number; z: number; heading: number } | null {
-    const n = this.world.graph.nearest(x, z, 400, (e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway');
+    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway';
+    const n = this.world.graph.nearest(x, z, 400, flt) ?? this.world.graph.nearest(x, z, 1500, flt);
     if (!n) return null;
     const e = n.e;
     const fwd = e.fwd;
@@ -331,6 +340,7 @@ export class Game {
       else this.updateVehicle(dt, inPanel);
       this.updateJob(dt);
       this.traffic.update(dt, this.px, this.pz, this.walking ? null : this.vehicle, this.state.company?.lines ?? [], this.env.night);
+      this.pedestrians.update(dt, this.px, this.pz, this.walking ? null : this.vehicle);
       this.placeT -= dt;
       if (this.placeT <= 0) {
         this.placeT = 1;
@@ -353,6 +363,7 @@ export class Game {
     this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.setSeason(this.env.season);
+    this.adaptPerformance(dt);
     this.hudT -= dt;
     if (this.hudT <= 0) {
       this.hudT = 0.1;
@@ -365,6 +376,34 @@ export class Game {
   }
 
   private navMeshDirty = false;
+  private urbanT = 0;
+  private urban = false;
+
+  /** Rychlostní limit: v obci max. 50 km/h (kromě dálnic a rychlostních silnic). */
+  speedLimit(cls: string | null): number | null {
+    if (!cls || cls === 'path') return null;
+    const lim = SPEED_LIMIT[cls];
+    if (!lim) return null;
+    if (this.urban && cls !== 'motorway' && cls !== 'trunk') return Math.min(lim, 50);
+    return lim;
+  }
+
+  /** Dynamické rozlišení: při nízkém FPS sníží vykreslovací rozlišení, při rezervě ho vrátí. */
+  private adaptPerformance(dt: number) {
+    if (!this.ready || document.hidden) return;
+    this.perfT += dt;
+    if (this.perfT < 2) return;
+    this.perfT = 0;
+    const max = Math.min(window.devicePixelRatio, 1.75);
+    let pr = this.pixelRatio;
+    if (this.fps < 28 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
+    else if (this.fps > 55 && pr < max) pr = Math.min(max, pr + 0.1);
+    if (Math.abs(pr - this.pixelRatio) > 0.01) {
+      this.pixelRatio = pr;
+      this.renderer.setPixelRatio(pr);
+      this.resize();
+    }
+  }
 
   private focus(): THREE.Vector3 {
     const y = this.walking ? this.walker.y : this.vehicle.y;
@@ -399,7 +438,7 @@ export class Game {
     setTimeout(() => $('loading').classList.add('hidden'), 700);
     if (!this.state.tutorialDone) {
       this.state.tutorialDone = true;
-      openPanel(this, 'help');
+      openPanel(this, 'welcome');
     }
   }
 
@@ -445,7 +484,7 @@ export class Game {
   private updateVehicle(dt: number, inPanel: boolean) {
     const v = this.vehicle;
     const ax = inPanel ? { throttle: 0, brake: 0, steer: 0, handbrake: false } : this.input.axes();
-    const obstacles = this.traffic.obstacles().filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
+    const obstacles = [...this.traffic.obstacles(), ...this.pedestrians.obstacles()].filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
     v.update(dt, ax, this.world, this.env.grip(), obstacles);
     v.updateAttitude(this.world, dt);
     this.crashCool -= dt;
@@ -804,9 +843,14 @@ export class Game {
       $('gear').textContent = v.gear < 0 ? 'R' : v.speed < 0.3 ? 'N' : String(v.gear);
       $('vehname').textContent = v.spec.name + (this.rental ? ' (půjčený)' : '');
       ($('rpm') as HTMLElement).style.width = `${Math.min(100, (v.rpm / (v.spec.mass > 5000 ? 2400 : 6500)) * 100)}%`;
-      const lim = v.onRoad ? SPEED_LIMIT[v.onRoad] : null;
+      this.urbanT -= 0.1;
+      if (this.urbanT <= 0) {
+        this.urbanT = 1.5;
+        this.urban = this.world.buildingVolume(v.x, v.z, 120) > 60000;
+      }
+      const lim = this.speedLimit(v.onRoad);
       const el = $('limit');
-      if (lim && v.onRoad !== 'path') {
+      if (lim) {
         el.textContent = String(lim);
         el.classList.remove('hidden');
         $('speed').style.color = Math.abs(v.vF) * 3.6 > lim + 5 ? '#ff7b6b' : '';

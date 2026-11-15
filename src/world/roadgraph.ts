@@ -23,6 +23,8 @@ export interface GEdge {
   back: boolean;
   tile: string;
   width: number;
+  /** Leží v zastavěném území (počítá se líně). */
+  urban?: boolean;
 }
 
 export const ROAD_HALF_WIDTH: Record<string, number> = {

@@ -1,6 +1,6 @@
 // Panely: práce, garáž, firma, mapa, deník, nastavení, nápověda.
 
-import { CITIES, CZ_OUTLINE, lonLatToWorld, worldToLonLat } from '../geo';
+import { CITIES, CZ_OUTLINE, lonLatToWorld, pointInOutline, worldToLonLat } from '../geo';
 import type { Game } from '../game/game';
 import {
   addLine, buyVehicle, candidates, companyValue, DEPOT_COST, FOUND_COST, nearestDepotDist, newCompany, sellValue, stopDemand,
@@ -53,7 +53,8 @@ export function openPanel(g: Game, name: string, refresh = false) {
     case 'map': mapPanel(g); break;
     case 'journal': journalPanel(g); break;
     case 'settings': settingsPanel(g); break;
-    case 'help': helpPanel(); break;
+    case 'help': helpPanel(g, false); break;
+    case 'welcome': helpPanel(g, true); break;
   }
   if (refresh) (document.querySelector('.modal-box') as HTMLElement).scrollTop = scroll;
 }
@@ -700,7 +701,7 @@ function settingsPanel(g: Game) {
   });
 }
 
-function helpPanel() {
+function helpPanel(g: Game, first: boolean) {
   show('help', `<h2>Vítejte v Česku na kolech</h2>
     <p>Celá Česká republika ze skutečných dat: každá budova, silnice, les, řeka, zastávka a adresa z OpenStreetMap, terén z výškových dat. Svět se stahuje průběžně kolem vás – jeďte kamkoli.</p>
     <h3>Ovládání</h3>
@@ -721,6 +722,24 @@ function helpPanel() {
     🚌 <b>Řidič autobusu</b> – v nabídce práce (J) vezměte linku. Zastavte u zastávky, otevřete dveře (O), počkejte na cestující, zavřete a jeďte dál podle jízdního řádu. Hodnotí se přesnost a plynulost.<br>
     🚕 <b>Taxi a rozvoz</b> – vozte zákazníky a zásilky na skutečné adresy.<br>
     🏢 <b>Firma</b> – za vydělané peníze založte dopravní firmu (F), kupte autobusy, najměte řidiče a provozujte linky. Vaše autobusy pak potkáte na silnici.</p>
-    <button class="btn primary" id="go">Vyrazit</button>`);
+    ${first ? `<h3>Kde začít?</h3><div class="row">${CITIES.slice(0, 12).map((c, i) => `<button class="btn" data-start="${i}">${escapeHtml(c.name.split(' – ')[0])}</button>`).join('')}
+      <button class="btn" id="random">🎲 Náhodné místo v ČR</button></div>` : ''}
+    <div class="row" style="margin-top:12px"><button class="btn primary" id="go">${first ? 'Začít tady (Praha)' : 'Vyrazit'}</button></div>`);
   on('#go', closePanel);
+  on('[data-start]', (el) => {
+    const c = CITIES[Number(el.dataset.start)];
+    const p = lonLatToWorld(c.lon, c.lat);
+    travel(g, p.x, p.z);
+  });
+  on('#random', () => {
+    // Náhodný bod uvnitř obrysu republiky.
+    for (let i = 0; i < 200; i++) {
+      const lon = 12.1 + Math.random() * 6.8;
+      const lat = 48.55 + Math.random() * 2.5;
+      if (!pointInOutline(lon, lat)) continue;
+      const p = lonLatToWorld(lon, lat);
+      travel(g, p.x, p.z);
+      return;
+    }
+  });
 }
