@@ -60,6 +60,7 @@ export const envUniforms = {
   uSnowAmount: { value: 0 },
   uWet: { value: 0 },
   uSeasonTint: { value: new THREE.Color(1, 1, 1) },
+  uOrigin: { value: new THREE.Vector2(0, 0) },
 };
 
 function addSnow(mat: THREE.MeshStandardMaterial, vegetation: boolean, key: string) {
@@ -68,28 +69,48 @@ function addSnow(mat: THREE.MeshStandardMaterial, vegetation: boolean, key: stri
     sh.uniforms.uSnowAmount = envUniforms.uSnowAmount;
     sh.uniforms.uSeasonTint = envUniforms.uSeasonTint;
     sh.uniforms.uWet = envUniforms.uWet;
+    sh.uniforms.uOrigin = envUniforms.uOrigin;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vWY;\nvarying float vUp;')
+      .replace('#include <common>', '#include <common>\nvarying float vWY;\nvarying float vUp;\nvarying vec2 vWXZ;\nuniform vec2 uOrigin;')
       .replace(
         '#include <worldpos_vertex>',
-        '#include <worldpos_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
+        '#include <worldpos_vertex>\nvec4 wpS = modelMatrix * vec4(transformed, 1.0);\nvWY = wpS.y;\nvWXZ = wpS.xz + uOrigin;\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
       );
     sh.fragmentShader = sh.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying float vWY;\nvarying float vUp;\nuniform float uSnowLine;\nuniform float uSnowAmount;\nuniform float uWet;\nuniform vec3 uSeasonTint;',
+        `#include <common>
+varying float vWY;
+varying float vUp;
+varying vec2 vWXZ;
+uniform float uSnowLine;
+uniform float uSnowAmount;
+uniform float uWet;
+uniform vec3 uSeasonTint;
+float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float isWater = 0.0;`,
       )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-${vegetation ? 'diffuseColor.rgb *= uSeasonTint;' : ''}
+${vegetation ? `
+isWater = step(0.42, diffuseColor.b) * step(diffuseColor.r * 2.2, diffuseColor.b) * step(diffuseColor.g * 1.25, diffuseColor.b);
+diffuseColor.rgb *= mix(uSeasonTint, vec3(1.0), isWater);
+// Jemná struktura trávy a polí zblízka.
+float dn = vnoise(vWXZ * 0.45) * 0.55 + vnoise(vWXZ * 0.09) * 0.45;
+diffuseColor.rgb *= mix(0.9 + dn * 0.2, 1.0, isWater);
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.75, 0.88, 1.0), isWater * 0.4);` : ''}
 float snowK = uSnowAmount * smoothstep(uSnowLine - 60.0, uSnowLine + 60.0, vWY) * smoothstep(0.55, 0.85, vUp);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), snowK);
 diffuseColor.rgb *= 1.0 - uWet * 0.25;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, uWet * (1.0 - snowK));',
+        '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, uWet * (1.0 - snowK));\nroughnessFactor = mix(roughnessFactor, 0.12, isWater);',
       );
   };
   mat.customProgramCacheKey = () => `snow-${key}`;
@@ -304,6 +325,7 @@ export class World {
   rebase(x: number, z: number): boolean {
     if (Math.hypot(x - this.origin.x, z - this.origin.z) < 2000) return false;
     this.origin = { x: Math.round(x), z: Math.round(z) };
+    envUniforms.uOrigin.value.set(this.origin.x % 8192, this.origin.z % 8192);
     for (const t of this.near.values()) t.group.position.set(t.ox - this.origin.x, 0, t.oz - this.origin.z);
     for (const t of this.far.values()) t.group.position.set(t.ox - this.origin.x, -3, t.oz - this.origin.z);
     return true;
@@ -695,6 +717,37 @@ export class World {
       pz = (pz / pl) * best * 1.5;
     }
     return { px, pz, nx: bnx, nz: bnz, depth: best };
+  }
+
+  /** První průsečík úsečky se zdí budovy (0..1), nebo 1, když je volno. */
+  segmentHit(ax: number, az: number, bx: number, bz: number): number {
+    const t = this.tileAt(ax, az);
+    if (!t?.colliders) return 1;
+    const c = t.colliders;
+    const cs = t.grid.size / c.cells;
+    const x0 = ax - t.ox, z0 = az - t.oz, x1 = bx - t.ox, z1 = bz - t.oz;
+    const i0 = Math.max(0, Math.floor(Math.min(x0, x1) / cs)), i1 = Math.min(c.cells - 1, Math.floor(Math.max(x0, x1) / cs));
+    const j0 = Math.max(0, Math.floor(Math.min(z0, z1) / cs)), j1 = Math.min(c.cells - 1, Math.floor(Math.max(z0, z1) / cs));
+    let best = 1;
+    const dx = x1 - x0, dz = z1 - z0;
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const cell = j * c.cells + i;
+        for (let k = c.cellStart[cell]; k < c.cellStart[cell + 1]; k++) {
+          const it = c.cellItems[k];
+          if (it < 0) continue;
+          const e = c.edges;
+          const ex = e[it * 4 + 2] - e[it * 4], ez = e[it * 4 + 3] - e[it * 4 + 1];
+          const den = dx * ez - dz * ex;
+          if (Math.abs(den) < 1e-9) continue;
+          const wx = e[it * 4] - x0, wz = e[it * 4 + 1] - z0;
+          const ta = (wx * ez - wz * ex) / den;
+          const tb = (wx * dz - wz * dx) / den;
+          if (ta >= 0 && ta < best && tb >= 0 && tb <= 1) best = ta;
+        }
+      }
+    }
+    return best;
   }
 
   /** Všechny zastávky v načtených dlaždicích (světové souřadnice). */

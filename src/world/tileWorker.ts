@@ -338,10 +338,10 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     ctx.lineJoin = 'round';
     each('building', (f) => {
       drawFeature(ctx, f, s, true);
-      ctx.strokeStyle = '#c6c49e';
-      ctx.lineWidth = 7 * pxPerM;
+      ctx.strokeStyle = '#cdc7b5';
+      ctx.lineWidth = 8 * pxPerM;
       ctx.stroke();
-      ctx.fillStyle = '#c6c49e';
+      ctx.fillStyle = '#cdc7b5';
       ctx.fill('evenodd');
     });
   }

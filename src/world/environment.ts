@@ -110,7 +110,7 @@ export class Environment {
     const warm = THREE.MathUtils.smoothstep(alt, 0, 25);
     this.sun.color.setRGB(1, 0.75 + 0.25 * warm, 0.55 + 0.45 * warm);
     this.sun.intensity = day * (3.2 - overcast * 2.4) + 0.05;
-    this.hemi.intensity = 0.75 + day * (0.55 - overcast * 0.2);
+    this.hemi.intensity = 0.6 + day * (0.4 - overcast * 0.15);
     this.hemi.color.setRGB(0.42 + day * 0.4, 0.5 + day * 0.36, 0.78 + day * 0.2);
     this.hemi.groundColor.setRGB(0.22 + day * 0.18, 0.22 + day * 0.14, 0.26 + day * 0.06);
     // Měsíc v noci.

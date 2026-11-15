@@ -15,7 +15,7 @@ export interface VehicleModel {
   sign?: { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture };
 }
 
-const glass = new THREE.MeshStandardMaterial({ color: 0x1d2630, roughness: 0.15, metalness: 0.4 });
+const glass = new THREE.MeshStandardMaterial({ color: 0x223040, roughness: 0.08, metalness: 0.6, envMapIntensity: 2.5 });
 const tyre = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
 const rim = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.35, metalness: 0.8 });
 const dark = new THREE.MeshStandardMaterial({ color: 0x222326, roughness: 0.7 });
@@ -60,7 +60,7 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.35 });
+  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.45, envMapIntensity: 2.2 });
   const L = spec.length;
   const W = spec.width;
   const H = spec.height;

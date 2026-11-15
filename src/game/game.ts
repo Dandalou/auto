@@ -1,6 +1,7 @@
 // Hlavní herní smyčka: svět, hráč (auto/autobus/chůze), kamera, práce, firma, ukládání.
 
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { CITIES, lonLatToWorld, worldToLonLat } from '../geo';
 import { Environment } from '../world/environment';
 import { QUALITY, World } from '../world/world';
@@ -17,7 +18,7 @@ import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
 
 const VEHICLE_COLORS: Record<VehicleType, number> = {
-  auto: 0x2f5fa8, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xc8202a, meziměstský: 0x2b6cb0, kamion: 0x3a6b3a,
+  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xc8202a, meziměstský: 0x2b6cb0, kamion: 0x3a6b3a,
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -70,6 +71,9 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.35;
     this.world = new World(this.renderer);
     this.scene.add(this.world.root);
     this.env = new Environment(this.scene, this.renderer);
@@ -545,13 +549,19 @@ export class Game {
     const gx = desired.x + this.world.origin.x, gz = desired.z + this.world.origin.z;
     const gh = this.world.terrainHeight(gx, gz);
     if (!Number.isNaN(gh)) desired.y = Math.max(desired.y, gh + 1.2);
-    // Kamera nesmí skončit ve zdi: přiblížit se k vozidlu, dokud není volno.
-    for (let k = 1; k <= 8; k++) {
-      const wx = desired.x + this.world.origin.x, wz = desired.z + this.world.origin.z;
-      const th = this.world.terrainHeight(wx, wz);
-      if (Number.isNaN(th) || desired.y > th + 30 || !this.world.collide(wx, wz, 0.6)) break;
-      desired.lerp(target, 0.18);
-      desired.y = Math.max(desired.y, target.y + 1.8);
+    // Kamera nesmí skončit ve zdi: když mezi vozidlem a kamerou stojí budova, přiblížit se.
+    {
+      const o = this.world.origin;
+      const th = this.world.terrainHeight(desired.x + o.x, desired.z + o.z);
+      if (Number.isNaN(th) || desired.y < th + 22) {
+        const hit = this.world.segmentHit(target.x + o.x, target.z + o.z, desired.x + o.x, desired.z + o.z);
+        if (hit < 1) {
+          const t = Math.max(0.05, hit - 0.6 / Math.max(1, target.distanceTo(desired)));
+          desired.x = target.x + (desired.x - target.x) * t;
+          desired.z = target.z + (desired.z - target.z) * t;
+          desired.y = Math.max(desired.y, target.y + 2.5);
+        }
+      }
     }
     if (!this.camInit) {
       this.camPos.copy(desired);
