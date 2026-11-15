@@ -110,12 +110,13 @@ export class Environment {
     const warm = THREE.MathUtils.smoothstep(alt, 0, 25);
     this.sun.color.setRGB(1, 0.75 + 0.25 * warm, 0.55 + 0.45 * warm);
     this.sun.intensity = day * (3.2 - overcast * 2.4) + 0.05;
-    this.hemi.intensity = 0.15 + day * (1.1 - overcast * 0.25);
-    this.hemi.color.setRGB(0.55 + day * 0.2, 0.6 + day * 0.22, 0.75 + day * 0.25);
+    this.hemi.intensity = 0.75 + day * (0.55 - overcast * 0.2);
+    this.hemi.color.setRGB(0.42 + day * 0.4, 0.5 + day * 0.36, 0.78 + day * 0.2);
+    this.hemi.groundColor.setRGB(0.22 + day * 0.18, 0.22 + day * 0.14, 0.26 + day * 0.06);
     // Měsíc v noci.
     if (day < 0.05) {
-      this.sun.color.setRGB(0.55, 0.65, 0.9);
-      this.sun.intensity = 0.25;
+      this.sun.color.setRGB(0.6, 0.7, 1.0);
+      this.sun.intensity = 0.7;
       this.sunDir.set(0.3, 0.8, 0.4).normalize();
     }
     this.sun.position.copy(focus).addScaledVector(this.sunDir, 500);
@@ -124,13 +125,13 @@ export class Environment {
     // Mlha.
     const fog = this.scene.fog as THREE.Fog;
     this.fogDay.setRGB(0.78 - overcast * 0.12, 0.84 - overcast * 0.12, 0.9 - overcast * 0.1);
-    const nightCol = new THREE.Color(0.03, 0.04, 0.07);
+    const nightCol = new THREE.Color(0.1, 0.13, 0.2);
     fog.color.copy(this.fogDay).lerp(nightCol, this.night);
     if (warm < 1 && day > 0.2) fog.color.lerp(new THREE.Color(0.95, 0.7, 0.5), (1 - warm) * 0.35);
     const vis = this.weather === 'mlha' ? 280 : this.weather === 'sníh' ? 900 : this.weather === 'déšť' ? 2500 : this.weather === 'oblačno' ? 7000 : 11000;
     fog.near = Math.min(250, vis * 0.1);
     fog.far = vis;
-    this.renderer.toneMappingExposure = 0.55 + day * 0.15;
+    this.renderer.toneMappingExposure = 0.85 - day * 0.15;
     this.sky.visible = this.weather !== 'mlha';
     this.scene.background = this.weather === 'mlha' || this.night > 0.9 ? fog.color : null;
 

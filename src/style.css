@@ -8,7 +8,7 @@
   --ok: #4cc27a;
   --warn: #f2b33d;
   --info: #5aa9e6;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color-scheme: dark;
 }
 
@@ -129,3 +129,11 @@ kbd { background: #2a3442; border: 1px solid var(--line); border-bottom-width: 2
   #touch .tright { bottom: 190px; }
   #touch .tact { bottom: 300px; }
 }
+
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.plabel { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 800; color: #fff; letter-spacing: .2px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.55), 0 0 8px rgba(0,0,0,.35); transform-origin: 50% 100%; will-change: transform, opacity; }
+.plabel.city { font-size: 22px; }
+.plabel.town { font-size: 18px; }
+.plabel.village { font-size: 15px; }
+.plabel.small { font-size: 13px; font-weight: 700; color: #f4efe2; }

@@ -109,6 +109,44 @@ class ElevSampler {
   }
 }
 
+const CUZK = 'https://ags.cuzk.gov.cz/arcgis2/rest/services';
+
+/**
+ * Rastr z ČÚZK (DMR 5G = terén, DMP 1G = povrch včetně vegetace) pro dlaždici.
+ * Mřížka n×n má krajní body přesně v rozích dlaždice, takže sousední dlaždice navazují.
+ */
+async function loadCuzk(service: string, z: number, x: number, y: number, n: number): Promise<Float32Array | null> {
+  const o = Math.PI * 6378137;
+  const S = (2 * o) / 2 ** z;
+  const p = S / (n - 1);
+  const x0 = x * S - o - p / 2, x1 = (x + 1) * S - o + p / 2;
+  const y0 = o - (y + 1) * S - p / 2, y1 = o - y * S + p / 2;
+  const url = `${CUZK}/${service}/ImageServer/exportImage?bbox=${x0.toFixed(2)},${y0.toFixed(2)},${x1.toFixed(2)},${y1.toFixed(2)}&bboxSR=3857&imageSR=3857&size=${n},${n}&format=bip&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation&f=image`;
+  try {
+    const r = await fetchRetry(url, 2);
+    if (!r) return null;
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength < n * n * 4) return null;
+    const f = new Float32Array(buf.slice(0, n * n * 4));
+    let valid = 0;
+    for (let i = 0; i < f.length; i++) {
+      if (!(f[i] > -500 && f[i] < 3000)) f[i] = NaN;
+      else valid++;
+    }
+    return valid > 0 ? f : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Leží dlaždice aspoň zčásti v Česku (hrubý obdélník)? */
+function inCzBox(z: number, x: number, y: number): boolean {
+  const n = 2 ** z;
+  const lon0 = (x / n) * 360 - 180, lon1 = ((x + 1) / n) * 360 - 180;
+  const lat = (t: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / n))) * 180) / Math.PI;
+  return lon1 > 12.05 && lon0 < 18.9 && lat(y + 1) < 51.08 && lat(y) > 48.54;
+}
+
 async function loadVector(url: string): Promise<VectorTile | null> {
   const r = await fetchRetry(url);
   if (!r) return null;
@@ -248,15 +286,16 @@ export const DRIVABLE = new Set([
 const MARKED = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'busway']);
 
 const LANDCOVER_COL: Record<string, string> = {
-  wood: '#3d6331', grass: '#86ab55', farmland: '#b9b06a', wetland: '#6f8f63', sand: '#d8cc9a',
-  rock: '#9c968c', ice: '#eef4f6',
+  wood: '#6d8a4c', grass: '#a2bd6c', farmland: '#cfc48a', wetland: '#8fa97c', sand: '#e2d6a6',
+  rock: '#b6b0a6', ice: '#f2f6f8',
 };
+const FARM = ['#cfc48a', '#bcc47c', '#d9ca8f', '#b2bf72', '#cbb87c', '#c4c98a', '#a9bb6e'];
 const LANDUSE_COL: Record<string, string> = {
-  residential: '#b7b19f', suburb: '#b7b19f', neighbourhood: '#b7b19f', quarter: '#b7b19f',
-  commercial: '#b9ada0', retail: '#b9ada0', industrial: '#a9a49a', garages: '#a9a49a', railway: '#a69f92',
-  cemetery: '#7f9a62', school: '#bdb39c', university: '#bdb39c', college: '#bdb39c', kindergarten: '#bdb39c',
-  hospital: '#c0b2a6', military: '#a2a088', quarry: '#b8ad98', pitch: '#7bab55', playground: '#a8b77e',
-  stadium: '#8fb067', track: '#b98f72', zoo: '#93ad6a', theme_park: '#a3b07a', dam: '#a9a49a',
+  residential: '#b8c48e', suburb: '#b8c48e', neighbourhood: '#b8c48e', quarter: '#b8c48e',
+  commercial: '#d4c8b8', retail: '#d4c8b8', industrial: '#c9c3b8', garages: '#c9c3b8', railway: '#c4bcae',
+  cemetery: '#9fb27c', school: '#d6ccb4', university: '#d6ccb4', college: '#d6ccb4', kindergarten: '#d6ccb4',
+  hospital: '#d8cbbf', military: '#b9b79c', quarry: '#cfc4ae', pitch: '#94bf6a', playground: '#bccb92',
+  stadium: '#a6c27a', track: '#c99a7c', zoo: '#a9c07c', theme_park: '#b9c48c', dam: '#c9c3b8',
 };
 
 function drawFeature(
@@ -278,14 +317,13 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
   const ctx = c.getContext('2d')!;
   const s = S / EXTENT;
   const pxPerM = S / sizeM;
-  ctx.fillStyle = '#8eaa5c';
+  ctx.fillStyle = '#a5bb70';
   ctx.fillRect(0, 0, S, S);
-  // Jemný šum, aby plochy nebyly ploché.
+  // Jemné skvrny louky.
   const rnd = mulberry(seed);
-  for (let i = 0; i < (detailed ? 2600 : 600); i++) {
-    const r = rnd();
-    ctx.fillStyle = r < 0.5 ? 'rgba(40,60,20,0.07)' : 'rgba(255,255,220,0.06)';
-    const w = (2 + rnd() * 10) * (S / 1024);
+  for (let i = 0; i < (detailed ? 900 : 200); i++) {
+    ctx.fillStyle = rnd() < 0.5 ? 'rgba(60,90,30,0.05)' : 'rgba(255,250,200,0.05)';
+    const w = (10 + rnd() * 40) * (S / 1024);
     ctx.fillRect(rnd() * S, rnd() * S, w, w);
   }
   if (!vt) return c;
@@ -300,10 +338,10 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     ctx.lineJoin = 'round';
     each('building', (f) => {
       drawFeature(ctx, f, s, true);
-      ctx.strokeStyle = '#aaa597';
-      ctx.lineWidth = 16 * pxPerM;
+      ctx.strokeStyle = '#c6c49e';
+      ctx.lineWidth = 7 * pxPerM;
       ctx.stroke();
-      ctx.fillStyle = '#aaa597';
+      ctx.fillStyle = '#c6c49e';
       ctx.fill('evenodd');
     });
   }
@@ -315,8 +353,13 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     ctx.fill('evenodd');
   });
   each('landcover', (f) => {
-    const col = LANDCOVER_COL[String(f.properties.class)];
+    const cls = String(f.properties.class);
+    let col = LANDCOVER_COL[cls];
     if (!col) return;
+    if (cls === 'farmland') {
+      const g = f.loadGeometry()[0]?.[0];
+      col = FARM[(g ? hashStr(`${g.x},${g.y}`) : 0) % FARM.length];
+    }
     drawFeature(ctx, f, s, true);
     ctx.fillStyle = col;
     ctx.fill('evenodd');
@@ -324,7 +367,7 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
   each('park', (f) => {
     if (f.type !== 3) return;
     drawFeature(ctx, f, s, true);
-    ctx.fillStyle = 'rgba(120,170,80,0.25)';
+    ctx.fillStyle = 'rgba(140,190,100,0.25)';
     ctx.fill('evenodd');
   });
   ctx.lineCap = 'round';
@@ -333,13 +376,13 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     const cls = String(f.properties.class);
     const w = cls === 'river' ? 14 : cls === 'canal' ? 8 : 3;
     drawFeature(ctx, f, s, false);
-    ctx.strokeStyle = '#4b7aa6';
+    ctx.strokeStyle = '#6aa6d6';
     ctx.lineWidth = Math.max(1, w * pxPerM);
     ctx.stroke();
   });
   each('water', (f) => {
     drawFeature(ctx, f, s, true);
-    ctx.fillStyle = '#4b7aa6';
+    ctx.fillStyle = '#6aa6d6';
     ctx.fill('evenodd');
   });
   each('aeroway', (f) => {
@@ -363,14 +406,14 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     const cls = String(f.properties.class);
     if (f.properties.brunnel === 'tunnel') continue;
     let w = ROAD_WIDTH[cls];
-    let col = '#55575a';
+    let col = '#8a93a3';
     if (cls === 'rail' || cls === 'transit') {
       w = 3.2;
-      col = '#6b6157';
+      col = '#8f857a';
     } else if (cls === 'path') {
-      col = '#c9bea4';
+      col = '#e2d8be';
     } else if (cls === 'track') {
-      col = '#a89a76';
+      col = '#c9ba92';
     }
     if (!w) continue;
     drawFeature(ctx, f, s, false);
@@ -378,9 +421,23 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     ctx.lineWidth = Math.max(detailed ? 1 : 1.5, w * pxPerM * (detailed ? 1 : 1.6));
     ctx.stroke();
   }
+  if (detailed) {
+    // Měkký stín u paty budov.
+    ctx.save();
+    ctx.filter = `blur(${Math.max(1, 2.5 * pxPerM)}px)`;
+    ctx.fillStyle = 'rgba(40,35,25,0.35)';
+    ctx.lineWidth = 3 * pxPerM;
+    ctx.strokeStyle = 'rgba(40,35,25,0.35)';
+    each('building', (f) => {
+      drawFeature(ctx, f, s, true);
+      ctx.fill('evenodd');
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
   each('building', (f) => {
     drawFeature(ctx, f, s, true);
-    ctx.fillStyle = '#8e857a';
+    ctx.fillStyle = '#b9b0a0';
     ctx.fill('evenodd');
   });
   return c;
@@ -424,28 +481,31 @@ function buildTerrain(grid: HeightGrid): MeshArrays {
 
 // ---------------------------------------------------------------- budovy
 
-const FACADES = [
-  [0.93, 0.89, 0.8], [0.9, 0.86, 0.74], [0.85, 0.82, 0.78], [0.95, 0.93, 0.88], [0.86, 0.76, 0.62],
-  [0.8, 0.84, 0.82], [0.93, 0.84, 0.72], [0.78, 0.76, 0.74], [0.9, 0.8, 0.66], [0.82, 0.86, 0.9],
-];
-const ROOFS = [
-  [0.62, 0.27, 0.2], [0.55, 0.24, 0.18], [0.45, 0.42, 0.4], [0.36, 0.33, 0.33], [0.6, 0.35, 0.25],
-];
-const FLAT_ROOF = [0.5, 0.49, 0.47];
+/** sRGB hex -> lineární RGB (barvy vrcholů three.js jsou lineární). */
+function lin(hex: string): number[] {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => Math.pow(c / 255, 2.2));
+}
 
-const COLOUR_NAMES: Record<string, number[]> = {
-  white: [0.95, 0.95, 0.93], lightgrey: [0.82, 0.82, 0.8], grey: [0.62, 0.62, 0.6], gray: [0.62, 0.62, 0.6],
-  yellow: [0.94, 0.87, 0.55], beige: [0.9, 0.85, 0.72], brown: [0.55, 0.4, 0.3], red: [0.75, 0.35, 0.3],
-  orange: [0.92, 0.65, 0.4], pink: [0.92, 0.75, 0.75], blue: [0.6, 0.7, 0.85], green: [0.6, 0.75, 0.6],
+const FACADES = ['#f1e6cc', '#f0d896', '#ecc6b4', '#c8d6e2', '#f4f1ea', '#e2b27a', '#d8d2c6', '#e9dcb8', '#d6e0c4', '#f2d2a8', '#e6c9d2', '#cfc9c0'].map(lin);
+const ROOFS = ['#a9503a', '#9c5a42', '#b2674a', '#77513f', '#6e7179', '#575a62', '#94463a', '#a5583e'].map(lin);
+const FLAT_ROOF = lin('#8f8c88');
+const CHIMNEY = lin('#8a4b3a');
+
+const COLOUR_NAMES: Record<string, string> = {
+  white: '#f4f2ec', lightgrey: '#d6d4cf', grey: '#a6a49f', gray: '#a6a49f', yellow: '#f0d88c', beige: '#e8dcbc',
+  brown: '#9a7058', red: '#c46a5a', orange: '#eaa66a', pink: '#ecbcbc', blue: '#a8bcd8', green: '#a8c4a0',
 };
 
 function parseColour(c: unknown): number[] | null {
   if (typeof c !== 'string') return null;
-  if (COLOUR_NAMES[c]) return COLOUR_NAMES[c];
-  const m = /^#([0-9a-f]{6})$/i.exec(c);
-  if (!m) return null;
-  const v = parseInt(m[1], 16);
-  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+  if (COLOUR_NAMES[c]) return lin(COLOUR_NAMES[c]);
+  if (/^#([0-9a-f]{6})$/i.test(c)) {
+    const v = lin(c);
+    // Příliš tmavé/syté barvy z OSM zjemnit do pastelu.
+    return v.map((x) => 0.25 + x * 0.75);
+  }
+  return null;
 }
 
 interface BuildCtx {
@@ -470,13 +530,20 @@ function addWall(
   const v0 = 0;
   const v1 = (y1 - y0) / (3.0 * 4);
   const w = b.walls;
-  // Dva trojúhelníky, CCW při pohledu zvenčí.
-  w.vert(ax, y0, az, nx, 0, nz, u0, v0, col);
-  w.vert(bx, y1, bz, nx, 0, nz, u1, v1, col);
-  w.vert(bx, y0, bz, nx, 0, nz, u1, v0, col);
-  w.vert(ax, y0, az, nx, 0, nz, u0, v0, col);
-  w.vert(ax, y1, az, nx, 0, nz, u0, v1, col);
-  w.vert(bx, y1, bz, nx, 0, nz, u1, v1, col);
+  // Spodní pás s jemným zatmavením u země (náhrada ambient occlusion).
+  const ym = Math.min(y1, y0 + 3.2);
+  const vm = (ym - y0) / (3.0 * 4);
+  const dark = col.map((c) => c * 0.62);
+  const q = (ya: number, yb: number, va: number, vb: number, ca: number[], cb: number[]) => {
+    w.vert(ax, ya, az, nx, 0, nz, u0, va, ca);
+    w.vert(bx, yb, bz, nx, 0, nz, u1, vb, cb);
+    w.vert(bx, ya, bz, nx, 0, nz, u1, va, ca);
+    w.vert(ax, ya, az, nx, 0, nz, u0, va, ca);
+    w.vert(ax, yb, az, nx, 0, nz, u0, vb, cb);
+    w.vert(bx, yb, bz, nx, 0, nz, u1, vb, cb);
+  };
+  q(y0, ym, v0, vm, dark, col);
+  if (y1 > ym + 0.01) q(ym, y1, vm, v1, col, col);
   return u1;
 }
 
@@ -498,6 +565,123 @@ function tri(m: MeshBuf, a: number[], b: number[], c: number[], col: number[]) {
   m.vert(c[0], c[1], c[2], nx / l, ny / l, nz / l, 0, 0, col);
 }
 
+/** Svislý obdélník (štít, komín) se správnou normálou ven od středu cx, cz. */
+function quadV(m: MeshBuf, a: number[], b: number[], y0: number, y1: number, col: number[], cx: number, cz: number) {
+  const dx = b[0] - a[0], dz = b[1] - a[1];
+  const l = Math.hypot(dx, dz) || 1;
+  let nx = dz / l, nz = -dx / l;
+  if ((a[0] + b[0]) / 2 - cx < 0 === nx > 0 && Math.abs(nx) > 1e-3) {
+    nx = -nx;
+    nz = -nz;
+  } else if (Math.abs(nx) <= 1e-3 && ((a[1] + b[1]) / 2 - cz) * nz < 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+  m.vert(a[0], y0, a[1], nx, 0, nz, 0, 0, col);
+  m.vert(b[0], y0, b[1], nx, 0, nz, 0, 0, col);
+  m.vert(b[0], y1, b[1], nx, 0, nz, 0, 0, col);
+  m.vert(a[0], y0, a[1], nx, 0, nz, 0, 0, col);
+  m.vert(b[0], y1, b[1], nx, 0, nz, 0, 0, col);
+  m.vert(a[0], y1, a[1], nx, 0, nz, 0, 0, col);
+}
+
+/** Konvexní obal (monotone chain). */
+function hull(p: number[][]): number[][] {
+  const pts = [...p].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo: number[][] = [];
+  for (const q of pts) {
+    while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+    lo.push(q);
+  }
+  const up: number[][] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const q = pts[i];
+    while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+    up.push(q);
+  }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+
+/** Orientovaný minimální obdélník: střed, osa delší strany, poloviční rozměry. */
+function obb(p: number[][]): { cx: number; cz: number; ux: number; uz: number; hl: number; hs: number; area: number } | null {
+  const h = hull(p);
+  if (h.length < 3) return null;
+  let best: { cx: number; cz: number; ux: number; uz: number; hl: number; hs: number; area: number } | null = null;
+  for (let i = 0; i < h.length; i++) {
+    const a = h[i], b = h[(i + 1) % h.length];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l < 1e-6) continue;
+    const ux = (b[0] - a[0]) / l, uz = (b[1] - a[1]) / l;
+    let mn0 = Infinity, mx0 = -Infinity, mn1 = Infinity, mx1 = -Infinity;
+    for (const q of h) {
+      const s0 = q[0] * ux + q[1] * uz;
+      const s1 = -q[0] * uz + q[1] * ux;
+      mn0 = Math.min(mn0, s0); mx0 = Math.max(mx0, s0);
+      mn1 = Math.min(mn1, s1); mx1 = Math.max(mx1, s1);
+    }
+    const area = (mx0 - mn0) * (mx1 - mn1);
+    if (!best || area < best.area) {
+      const c0 = (mn0 + mx0) / 2, c1 = (mn1 + mx1) / 2;
+      let o = { cx: c0 * ux - c1 * uz, cz: c0 * uz + c1 * ux, ux, uz, hl: (mx0 - mn0) / 2, hs: (mx1 - mn1) / 2, area };
+      if (o.hs > o.hl) o = { ...o, ux: -uz, uz: ux, hl: o.hs, hs: o.hl };
+      best = o;
+    }
+  }
+  return best;
+}
+
+function pitchedRoof(b: BuildCtx, o: NonNullable<ReturnType<typeof obb>>, y1: number, seed: number, wallCol: number[], roofCol: number[]) {
+  const ov = 0.45; // přesah střechy
+  const hl = o.hl + ov, hs = o.hs + ov;
+  const { cx, cz, ux, uz } = o;
+  const vx = -uz, vz = ux; // příčná osa
+  const P = (a: number, c: number, y: number) => [cx + ux * a + vx * c, y, cz + uz * a + vz * c];
+  const rh = Math.min(7.5, o.hs * (0.75 + (seed % 5) * 0.06));
+  const yE = y1 - 0.25; // okap mírně pod korunou zdi
+  const hip = o.hl / o.hs < 1.35 || (seed >>> 3) % 4 === 0;
+  const rl = hip ? Math.max(0.1, o.hl - o.hs * 0.9) : hl; // polovina délky hřebene
+  const c00 = P(-hl, -hs, yE), c10 = P(hl, -hs, yE), c11 = P(hl, hs, yE), c01 = P(-hl, hs, yE);
+  const r0 = P(-rl, 0, y1 + rh), r1 = P(rl, 0, y1 + rh);
+  const R = b.roofs;
+  tri(R, c00, c10, r1, roofCol);
+  tri(R, c00, r1, r0, roofCol);
+  tri(R, c11, c01, r0, roofCol);
+  tri(R, c11, r0, r1, roofCol);
+  const roofDark = roofCol.map((v) => v * 0.82);
+  if (hip) {
+    tri(R, c10, c11, r1, roofDark);
+    tri(R, c01, c00, r0, roofDark);
+  } else {
+    // Štíty ve fasádě (o kousek dovnitř, aby nepřečnívaly přesah).
+    const g0a = P(-o.hl, -o.hs, y1), g0b = P(-o.hl, o.hs, y1), g0r = P(-o.hl, 0, y1 + rh * (o.hs / hs));
+    const g1a = P(o.hl, -o.hs, y1), g1b = P(o.hl, o.hs, y1), g1r = P(o.hl, 0, y1 + rh * (o.hs / hs));
+    for (const [p, q, r] of [[g0a, g0b, g0r], [g1a, g1b, g1r]]) {
+      const n = [r[0] - cx, 0, r[2] - cz];
+      const l = Math.hypot(n[0], n[2]) || 1;
+      for (const v of [p, q, r]) b.walls.vert(v[0], v[1], v[2], n[0] / l, 0, n[2] / l, 0, 0, wallCol);
+    }
+    tri(R, c10, c11, r1, roofDark);
+    tri(R, c01, c00, r0, roofDark);
+  }
+  // Komín.
+  if ((seed >>> 5) % 5 < 3 && o.hs > 2.5) {
+    const a = ((seed >>> 7) % 100) / 100 * 1.2 - 0.6;
+    const sgn = (seed >>> 9) % 2 ? 1 : -1;
+    const c = sgn * o.hs * 0.35;
+    const yb = y1 + rh * (1 - Math.abs(c) / hs) - 0.6;
+    const yt = y1 + rh + 0.9;
+    const w = 0.35;
+    const ax = a * Math.min(rl, o.hl * 0.8);
+    const k = [P(ax - w, c - w, 0), P(ax + w, c - w, 0), P(ax + w, c + w, 0), P(ax - w, c + w, 0)].map((v) => [v[0], v[2]]);
+    const mx = (k[0][0] + k[2][0]) / 2, mz = (k[0][1] + k[2][1]) / 2;
+    for (let i = 0; i < 4; i++) quadV(b.walls, k[i], k[(i + 1) % 4], yb, yt, CHIMNEY, mx, mz);
+    const top = k.map((v) => [v[0], yt, v[1]]);
+    tri(R, top[0], top[1], top[2], CHIMNEY);
+    tri(R, top[0], top[2], top[3], CHIMNEY);
+  }
+}
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
   const layer = vt.layers.building;
   if (!layer) return;
@@ -508,7 +692,6 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
     const minH = Number(props.render_min_height) || 0;
     if (hgt <= 2) hgt = 3.2;
     const rings = f.loadGeometry();
-    // Rozdělit na polygony: vnější kruh (kladná plocha) + díry.
     const polys: { outer: Pt[]; holes: Pt[][] }[] = [];
     for (const r of rings) {
       if (r.length < 4) continue;
@@ -519,7 +702,6 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
     const custom = parseColour(props.colour);
     for (const poly of polys) {
       const o = poly.outer;
-      // Těžiště a ořez: budovu vlastní dlaždice, ve které leží její těžiště.
       let cx = 0;
       let cy = 0;
       for (let i = 0; i < o.length - 1; i++) {
@@ -530,10 +712,9 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       cy /= o.length - 1;
       if (cx < 0 || cy < 0 || cx >= EXTENT || cy >= EXTENT) continue;
       const s = b.s;
-      const areaM = (ringArea(o) * s * s);
+      const areaM = ringArea(o) * s * s;
       const seed = hashStr(`${Math.round(cx)},${Math.round(cy)}`);
       const col = custom ?? FACADES[seed % FACADES.length];
-      // Základna = nejnižší bod terénu pod půdorysem.
       let base = Infinity;
       let top = -Infinity;
       for (const p of o) {
@@ -542,8 +723,11 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         top = Math.max(top, h);
       }
       if (!Number.isFinite(base)) continue;
+      // Nízké přístavky a garáže s nulovou výškou nejsou vysoké 3 m+.
+      const small = areaM < 30;
+      const wallH = small ? Math.min(hgt, 2.6) : hgt;
       const y0 = minH > 0 ? top + minH : base - 0.5;
-      const y1 = top + hgt;
+      const y1 = top + wallH;
       b.bpts.push(cx * s, cy * s, areaM * hgt);
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
@@ -553,29 +737,21 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
           if (minH < 2.5) b.edges.push(ax, az, bx, bz);
         }
       }
-      // Střecha.
-      const simple = poly.holes.length === 0 && o.length === 5 && hgt <= 13 && areaM > 30 && areaM < 450;
-      if (simple && seed % 7 !== 0) {
-        // Sedlová střecha nad čtyřúhelníkem – hřeben podél delší strany.
-        const p = o.slice(0, 4).map((q) => [q.x * s, q.y * s]);
-        const l01 = Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]);
-        const l12 = Math.hypot(p[2][0] - p[1][0], p[2][1] - p[1][1]);
-        const q = l01 >= l12 ? p : [p[1], p[2], p[3], p[0]];
-        const shortSide = Math.min(l01, l12);
-        const rh = Math.min(6, shortSide * 0.42);
-        const rc = ROOFS[(seed >> 4) % ROOFS.length];
-        const r0 = [(q[0][0] + q[3][0]) / 2, y1 + rh, (q[0][1] + q[3][1]) / 2];
-        const r1 = [(q[1][0] + q[2][0]) / 2, y1 + rh, (q[1][1] + q[2][1]) / 2];
-        const c = q.map((v) => [v[0], y1, v[1]]);
-        tri(b.roofs, c[0], c[1], r1, rc);
-        tri(b.roofs, c[0], r1, r0, rc);
-        tri(b.roofs, c[2], c[3], r0, rc);
-        tri(b.roofs, c[2], r0, r1, rc);
-        // Štíty jsou fasáda.
-        const gc = col.map((v) => v * 0.92);
-        tri(b.roofs, c[1], c[2], r1, gc);
-        tri(b.roofs, c[3], c[0], r0, gc);
-      } else {
+      // Střecha: šikmá nad téměř obdélníkovým půdorysem, jinak plochá.
+      let pitched = false;
+      if (poly.holes.length === 0 && minH < 2.5 && hgt <= 24 && areaM > 12 && areaM < 3500) {
+        const pts = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
+        const bb = obb(pts);
+        if (bb && areaM / bb.area > 0.78) {
+          const flatChance = hgt > 15 ? 0.85 : areaM > 1200 ? 0.6 : areaM > 500 ? 0.3 : custom ? 0.25 : 0.06;
+          if ((seed % 1000) / 1000 >= flatChance) {
+            const rc = ROOFS[(seed >>> 4) % ROOFS.length];
+            pitchedRoof(b, bb, y1, seed, col, rc);
+            pitched = true;
+          }
+        }
+      }
+      if (!pitched) {
         const flat: number[] = [];
         const holeIdx: number[] = [];
         for (let i = 0; i < o.length - 1; i++) flat.push(o[i].x * s, o[i].y * s);
@@ -584,7 +760,7 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
           for (let i = 0; i < hole.length - 1; i++) flat.push(hole[i].x * s, hole[i].y * s);
         }
         const idx = earcut(flat, holeIdx);
-        const rc = hgt > 13 || custom ? FLAT_ROOF : areaM > 450 ? FLAT_ROOF : ROOFS[(seed >> 4) % ROOFS.length];
+        const rc = FLAT_ROOF.map((v, i) => v * (0.9 + ((seed >>> (i * 3)) % 10) / 50));
         for (let i = 0; i < idx.length; i += 3) {
           for (const k of [idx[i], idx[i + 2], idx[i + 1]]) {
             b.roofs.vert(flat[k * 2], y1, flat[k * 2 + 1], 0, 1, 0, 0, 0, rc);
@@ -785,11 +961,19 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
 
 // ---------------------------------------------------------------- stromy
 
-function buildTrees(vt: VectorTile, sizeM: number, budget: number, seed: number, height: (x: number, z: number) => number): { trees: Float32Array; circles: number[] } {
-  const M = 256;
+/**
+ * Stromy. V Česku podle skutečné vegetace z ČÚZK (výška porostu = DMP 1G − DMR 5G),
+ * mimo republiku podle lesů z OSM. Na loukách řídké keře.
+ */
+function buildTrees(
+  vt: VectorTile, sizeM: number, budget: number, seed: number, height: (x: number, z: number) => number,
+  canopy: Float32Array | null, cn: number,
+): { trees: Float32Array; circles: number[] } {
+  const M = 512;
   const c = new OffscreenCanvas(M, M);
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
-  ctx.fillStyle = '#000';
+  // R = les (OSM), G = louka/park (keře), 0 = zakázáno.
+  ctx.fillStyle = canopy ? 'rgb(0,30,0)' : '#000';
   ctx.fillRect(0, 0, M, M);
   const s = M / EXTENT;
   const pxPerM = M / sizeM;
@@ -801,20 +985,14 @@ function buildTrees(vt: VectorTile, sizeM: number, budget: number, seed: number,
   each('landcover', (f) => {
     const cls = String(f.properties.class);
     const sub = String(f.properties.subclass);
-    let v = 0;
-    if (cls === 'wood') v = 255;
-    else if (sub === 'park' || sub === 'garden' || sub === 'village_green') v = 40;
-    else if (cls === 'wetland') v = 60;
-    else if (sub === 'scrub') v = 90;
-    if (!v) return;
+    let r = 0, g = 0;
+    if (cls === 'wood') r = 255;
+    else if (sub === 'scrub') { r = 70; g = 60; }
+    else if (cls === 'grass' || sub === 'park' || sub === 'garden') { r = 25; g = 45; }
+    else if (cls === 'wetland') { r = 50; g = 30; }
+    if (!r && !g) return;
     drawFeature(ctx, f, s, true);
-    ctx.fillStyle = `rgb(${v},${v},${v})`;
-    ctx.fill('evenodd');
-  });
-  each('park', (f) => {
-    if (f.type !== 3) return;
-    drawFeature(ctx, f, s, true);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillStyle = `rgb(${r},${g},0)`;
     ctx.fill('evenodd');
   });
   ctx.fillStyle = '#000';
@@ -827,42 +1005,134 @@ function buildTrees(vt: VectorTile, sizeM: number, budget: number, seed: number,
   each('building', (f) => {
     drawFeature(ctx, f, s, true);
     ctx.fill('evenodd');
-    ctx.lineWidth = 3 * pxPerM;
+    ctx.lineWidth = 2.5 * pxPerM;
     ctx.stroke();
   });
   each('transportation', (f) => {
     if (f.type !== 2) return;
     const w = ROAD_WIDTH[String(f.properties.class)] ?? 4;
     drawFeature(ctx, f, s, false);
-    ctx.lineWidth = Math.max(1.5, (w + 5) * pxPerM);
+    ctx.lineWidth = Math.max(1.5, (w + 3) * pxPerM);
     ctx.stroke();
   });
   each('waterway', (f) => {
     drawFeature(ctx, f, s, false);
-    ctx.lineWidth = 6 * pxPerM;
+    ctx.lineWidth = 5 * pxPerM;
     ctx.stroke();
+  });
+  each('aeroway', (f) => {
+    drawFeature(ctx, f, s, f.type === 3);
+    if (f.type === 3) ctx.fill('evenodd');
+    else {
+      ctx.lineWidth = 50 * pxPerM;
+      ctx.stroke();
+    }
   });
   const d = ctx.getImageData(0, 0, M, M).data;
   const rnd = mulberry(seed ^ 0x9e3779b9);
   const out = new FloatBuf(budget * 5);
   const circles: number[] = [];
-  let tries = budget * 4;
+  const canopyAt = (x: number, z: number) => {
+    const i = Math.min(cn - 1, Math.max(0, Math.round((x / sizeM) * (cn - 1))));
+    const j = Math.min(cn - 1, Math.max(0, Math.round((z / sizeM) * (cn - 1))));
+    const v = canopy![j * cn + i];
+    return Number.isFinite(v) ? v : 0;
+  };
+  let tries = budget * 8;
   let count = 0;
+  let bushes = 0;
   while (tries-- > 0 && count < budget) {
     const px = rnd() * M;
     const py = rnd() * M;
-    const v = d[(Math.floor(py) * M + Math.floor(px)) * 4];
-    if (v === 0 || rnd() * 255 > v) continue;
+    const k = (Math.floor(py) * M + Math.floor(px)) * 4;
+    const r = d[k], g = d[k + 1];
+    if (r === 0 && g === 0) continue;
     const x = (px / M) * sizeM;
     const z = (py / M) * sizeM;
-    const forest = v > 200;
-    const kind = forest ? (rnd() < 0.62 ? 0 : 1) : rnd() < 0.25 ? 0 : 1;
-    const sc = forest ? 0.9 + rnd() * 0.6 : 0.6 + rnd() * 0.5;
-    out.push(x, height(x, z) - 0.3, z, sc, kind);
-    circles.push(x, z, 0.35 * sc + 0.15);
+    const y = height(x, z);
+    let kind: number;
+    let sc: number;
+    if (canopy) {
+      const ch = canopyAt(x, z);
+      if (ch >= 3.5 && ch < 60) {
+        const conProb = y > 750 ? 0.9 : y > 500 ? 0.65 : r > 200 ? 0.5 : 0.15;
+        kind = rnd() < conProb ? 0 : 1;
+        sc = Math.max(0.45, Math.min(2.6, ch / (kind === 0 ? 13 : 10))) * (0.85 + rnd() * 0.3);
+      } else if (g > 0 && bushes < budget * 0.08 && rnd() < 0.04) {
+        kind = 2;
+        sc = 0.6 + rnd() * 0.6;
+        bushes++;
+      } else continue;
+    } else {
+      if (rnd() * 255 > r) {
+        if (g > 0 && bushes < budget * 0.08 && rnd() < 0.05) {
+          kind = 2;
+          sc = 0.6 + rnd() * 0.6;
+          bushes++;
+        } else continue;
+      } else {
+        const forest = r > 200;
+        kind = forest ? (rnd() < 0.62 ? 0 : 1) : rnd() < 0.25 ? 0 : 1;
+        sc = forest ? 1 + rnd() * 0.7 : 0.6 + rnd() * 0.5;
+      }
+    }
+    out.push(x, y - 0.3, z, sc, kind);
+    if (kind !== 2) circles.push(x, z, 0.3 * sc + 0.15);
     count++;
   }
   return { trees: out.out(), circles };
+}
+
+/** Pouliční lampy podél silnic v zastavěném území. */
+function buildLamps(vt: VectorTile, sizeM: number, bpts: Float32Array, height: (x: number, z: number) => number): Float32Array {
+  const G = 48;
+  const cs = sizeM / G;
+  const dens = new Uint16Array(G * G);
+  for (let i = 0; i < bpts.length; i += 3) {
+    const gx = Math.floor(bpts[i] / cs), gz = Math.floor(bpts[i + 1] / cs);
+    if (gx >= 0 && gz >= 0 && gx < G && gz < G) dens[gz * G + gx]++;
+  }
+  const urban = (x: number, z: number) => {
+    const gx = Math.floor(x / cs), gz = Math.floor(z / cs);
+    let n = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const a = gx + dx, b = gz + dz;
+      if (a >= 0 && b >= 0 && a < G && b < G) n += dens[b * G + a];
+    }
+    return n >= 4;
+  };
+  const layer = vt.layers.transportation;
+  const out = new FloatBuf(1024);
+  if (!layer) return out.out();
+  const s = sizeM / EXTENT;
+  const OK = new Set(['minor', 'tertiary', 'secondary', 'primary', 'busway']);
+  for (let fi = 0; fi < layer.length; fi++) {
+    const f = layer.feature(fi);
+    if (f.type !== 2 || !OK.has(String(f.properties.class)) || f.properties.brunnel) continue;
+    const hw = (ROAD_WIDTH[String(f.properties.class)] ?? 6) / 2 + 1.2;
+    for (const line of f.loadGeometry()) {
+      for (const part of clipLine(line, EXTENT)) {
+        let acc = 14;
+        let side = 1;
+        for (let i = 0; i + 1 < part.length; i++) {
+          const ax = part[i].x * s, az = part[i].y * s, bx = part[i + 1].x * s, bz = part[i + 1].y * s;
+          const l = Math.hypot(bx - ax, bz - az);
+          if (l < 0.01) continue;
+          const nx = (bz - az) / l, nz = -(bx - ax) / l;
+          while (acc < l) {
+            const t = acc / l;
+            const x = ax + (bx - ax) * t + nx * hw * side;
+            const z = az + (bz - az) * t + nz * hw * side;
+            if (urban(x, z)) out.push(x, height(x, z), z);
+            acc += 32;
+            side = -side;
+          }
+          acc -= l;
+        }
+      }
+    }
+  }
+  return out.out();
 }
 
 // ---------------------------------------------------------------- kolize
@@ -967,12 +1237,24 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const sampler = new ElevSampler(ez);
   const margin = 0.15;
   const vtPromise = loadVector(req.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)));
+  const CN = 2 * N + 1;
+  const cz = near && inCzBox(z, x, y);
+  const dmrP = cz ? loadCuzk('dmr5g', z, x, y, CN) : Promise.resolve(null);
+  const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
   await sampler.prepare((x - margin) * scale, (y - margin) * scale, (x + 1 + margin) * scale, (y + 1 + margin) * scale);
+  const dmr = await dmrP;
   const h = new Float32Array((N + 1) * (N + 1));
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
-      h[j * (N + 1) + i] = sampler.sample((x + i / N) * scale, (y + j / N) * scale);
+      const v = dmr ? dmr[2 * j * CN + 2 * i] : NaN;
+      h[j * (N + 1) + i] = Number.isFinite(v) ? v : sampler.sample((x + i / N) * scale, (y + j / N) * scale);
     }
+  }
+  const dmp = await dmpP;
+  let canopy: Float32Array | null = null;
+  if (dmr && dmp) {
+    canopy = new Float32Array(CN * CN);
+    for (let i = 0; i < canopy.length; i++) canopy[i] = dmp[i] - dmr[i];
   }
   const grid: HeightGrid = { n: N, size: sizeM, h };
   const globalHeight = (lx: number, lz: number) => sampler.sample((x + lx / sizeM) * scale, (y + lz / sizeM) * scale);
@@ -1014,7 +1296,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails]) addMesh(m);
     let circles: number[] = [];
     if (req.treeBudget > 0) {
-      const t = buildTrees(vt, sizeM, req.treeBudget, seed, height);
+      const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);
       data.trees = t.trees;
       circles = t.circles;
       transfer.push(t.trees.buffer);
@@ -1027,9 +1309,13 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     data.roadLines = rctx.lines;
     for (const l of rctx.lines) transfer.push(l.pts.buffer);
     data.buildings = bctx.bpts.out();
+    data.lamps = buildLamps(vt, sizeM, data.buildings, height);
+    transfer.push(data.lamps.buffer);
     transfer.push(data.buildings.buffer);
     Object.assign(data, points(vt, s));
     for (const st of data.streets!) transfer.push(st.pts.buffer);
+  } else if (vt) {
+    data.places = points(vt, sizeM / EXTENT).places;
   }
   return { data, transfer };
 }

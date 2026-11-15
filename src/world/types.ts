@@ -76,7 +76,9 @@ export interface TileData {
   paths?: MeshArrays;
   bridgeSides?: MeshArrays;
   rails?: MeshArrays;
-  /** x, y, z, měřítko, druh (0 = jehličnan, 1 = listnáč). */
+  /** Pouliční lampy: x, y, z. */
+  lamps?: Float32Array;
+  /** x, y, z, měřítko, druh (0 = jehličnan, 1 = listnáč, 2 = keř). */
   trees?: Float32Array;
   colliders?: Colliders;
   /** Mostovky: x1, z1, y1, x2, z2, y2, polovina šířky. */

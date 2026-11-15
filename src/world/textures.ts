@@ -67,22 +67,25 @@ export function roadTexture(marked: boolean): THREE.CanvasTexture {
   const W = 128;
   const H = 256;
   const { c, ctx } = canvas(W, H);
-  ctx.fillStyle = '#4a4c50';
+  ctx.fillStyle = '#868d99';
   ctx.fillRect(0, 0, W, H);
-  for (let i = 0; i < 2500; i++) {
-    const v = 60 + Math.random() * 40;
-    ctx.fillStyle = `rgba(${v},${v},${v + 3},0.5)`;
-    ctx.fillRect(Math.random() * W, Math.random() * H, 1.5, 1.5);
+  for (let i = 0; i < 900; i++) {
+    const v = 120 + Math.random() * 30;
+    ctx.fillStyle = `rgba(${v},${v + 4},${v + 12},0.35)`;
+    ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
   }
-  // Vyjeté stopy.
-  ctx.fillStyle = 'rgba(30,30,32,0.18)';
-  ctx.fillRect(W * 0.18, 0, W * 0.1, H);
-  ctx.fillRect(W * 0.72, 0, W * 0.1, H);
+  // Krajnice: světlejší okraj.
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0.18)');
+  g.addColorStop(0.06, 'rgba(255,255,255,0)');
+  g.addColorStop(0.94, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(255,255,255,0.18)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
   if (marked) {
-    ctx.fillStyle = '#e9e7df';
-    ctx.fillRect(3, 0, 3, H);
-    ctx.fillRect(W - 6, 0, 3, H);
-    // Přerušovaná osa: 3 m čára / 5 m mezera.
+    ctx.fillStyle = 'rgba(248,248,242,0.9)';
+    ctx.fillRect(5, 0, 3, H);
+    ctx.fillRect(W - 8, 0, 3, H);
     ctx.fillRect(W / 2 - 1.5, 0, 3, H * (3 / 8));
   }
   const t = finish(c);
@@ -92,7 +95,7 @@ export function roadTexture(marked: boolean): THREE.CanvasTexture {
 
 export function pathTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 64);
-  ctx.fillStyle = '#b8ab8e';
+  ctx.fillStyle = '#ddd2b6';
   ctx.fillRect(0, 0, 64, 64);
   for (let i = 0; i < 300; i++) {
     const v = 150 + Math.random() * 60;

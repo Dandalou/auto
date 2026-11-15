@@ -60,6 +60,8 @@ export class Game {
   private fps = 60;
   private crashCool = 0;
   location = { place: '', street: '' };
+  private labelEls = new Map<string, { el: HTMLDivElement; x: number; z: number; y: number }>();
+  private labelT = 0;
   paused = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -67,7 +69,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.world = new World(this.renderer);
     this.scene.add(this.world.root);
     this.env = new Environment(this.scene, this.renderer);
@@ -318,6 +320,7 @@ export class Game {
     }
 
     if (!this.ready) {
+      this.camInit = false;
       this.waitForWorld();
     } else {
       if (this.walking) this.updateWalker(dt, inPanel);
@@ -343,6 +346,9 @@ export class Game {
     this.updateCamera(dt);
     this.env.update(dt, this.camera.position, this.focus());
     this.world.mats.walls.emissiveIntensity = this.env.night * 1.4;
+    this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
+    this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
+    this.world.setSeason(this.env.season);
     this.hudT -= dt;
     if (this.hudT <= 0) {
       this.hudT = 0.1;
@@ -350,6 +356,7 @@ export class Game {
     }
     this.minimap.draw(this);
     this.renderer.render(this.scene, this.camera);
+    this.updateLabels(dt);
     this.input.endFrame();
   }
 
@@ -455,7 +462,7 @@ export class Game {
     for (const w of m.wheels) w.children.forEach((c) => (c.rotation.x -= spin));
     for (const d of m.doors) d.position.x = v.spec.width / 2 + (v.doorsOpen ? 0.28 : 0.02);
     const night = this.env.night;
-    if (m.headlights) m.headlights.intensity = night > 0.35 ? 900 : 0;
+    if (m.headlights) m.headlights.intensity = night > 0.35 ? 260 : 0;
     m.lightMats[0].emissiveIntensity = night > 0.35 ? 3 : 0.2;
     m.brakeMat.emissiveIntensity = ax.brake > 0.1 && v.vF > 0.3 ? 3 : night > 0.35 ? 1 : 0.2;
     this.state.stats.distance += Math.abs(v.vF) * dt;
@@ -538,6 +545,14 @@ export class Game {
     const gx = desired.x + this.world.origin.x, gz = desired.z + this.world.origin.z;
     const gh = this.world.terrainHeight(gx, gz);
     if (!Number.isNaN(gh)) desired.y = Math.max(desired.y, gh + 1.2);
+    // Kamera nesmí skončit ve zdi: přiblížit se k vozidlu, dokud není volno.
+    for (let k = 1; k <= 8; k++) {
+      const wx = desired.x + this.world.origin.x, wz = desired.z + this.world.origin.z;
+      const th = this.world.terrainHeight(wx, wz);
+      if (Number.isNaN(th) || desired.y > th + 30 || !this.world.collide(wx, wz, 0.6)) break;
+      desired.lerp(target, 0.18);
+      desired.y = Math.max(desired.y, target.y + 1.8);
+    }
     if (!this.camInit) {
       this.camPos.copy(desired);
       this.camInit = true;
@@ -675,15 +690,15 @@ export class Game {
           this.pay(0, p.cls === 'city' || p.cls === 'town' ? 25 : 8);
         }
       }
-      const w = ['city', 'town', 'village', 'hamlet'].includes(p.cls) ? 1 : 0.6;
-      if (d < 4000 && (!best || d / w < best.d / best.w)) best = { name: p.name, d, w };
+      const w = p.cls === 'city' ? 3 : p.cls === 'town' ? 2 : 1;
+      if (['city', 'town', 'village', 'hamlet'].includes(p.cls) && d < 2500 * w && (!best || d / w < best.d / best.w)) best = { name: p.name, d, w };
     }
     // Čtvrť má přednost, je-li blízko.
     let suburb: string | null = null;
     for (const p of this.world.allPlaces()) {
       if (['suburb', 'quarter', 'neighbourhood'].includes(p.cls) && Math.hypot(p.x - this.px, p.z - this.pz) < 700) suburb = p.name;
     }
-    this.location.place = best ? (suburb && suburb !== best.name ? `${best.name} – ${suburb}` : best.name) : '';
+    this.location.place = best ? (suburb && suburb !== best.name ? `${best.name} – ${suburb}` : best.name) : suburb ?? '';
     this.location.street = this.world.streetName(this.px, this.pz) ?? '';
   }
 
@@ -694,6 +709,58 @@ export class Game {
     this.state.money += r.income - r.costs;
     for (const e of r.events) this.notify(`🏢 ${e}`, 'warn');
     if (currentPanel() === 'company') openPanel(this, 'company', true);
+  }
+
+  // ------------------------------------------------------------ popisky obcí
+
+  private updateLabels(dt: number) {
+    const box = $('labels');
+    this.labelT -= dt;
+    if (this.labelT <= 0 && this.ready) {
+      this.labelT = 0.5;
+      const rank: Record<string, number> = { city: 9000, town: 5000, village: 2600, suburb: 1400, quarter: 900, hamlet: 1100, neighbourhood: 600 };
+      const want = this.world.allPlaces()
+        .map((p) => ({ p, d: Math.hypot(p.x - this.px, p.z - this.pz) }))
+        .filter(({ p, d }) => d < (rank[p.cls] ?? 0) && d > 60)
+        .sort((a, b) => a.d / (rank[a.p.cls] ?? 1) - b.d / (rank[b.p.cls] ?? 1))
+        .slice(0, 10);
+      const keep = new Set<string>();
+      for (const { p } of want) {
+        const key = `${p.name}|${Math.round(p.x)}|${Math.round(p.z)}`;
+        keep.add(key);
+        if (this.labelEls.has(key)) continue;
+        const el = document.createElement('div');
+        const big = ['city', 'town', 'village'].includes(p.cls) ? p.cls : 'small';
+        el.className = `plabel ${big}`;
+        el.textContent = p.name;
+        box.appendChild(el);
+        const th = this.world.terrainHeight(p.x, p.z);
+        this.labelEls.set(key, { el, x: p.x, z: p.z, y: Number.isNaN(th) ? 0 : th });
+      }
+      for (const [k, v] of this.labelEls) {
+        if (!keep.has(k)) {
+          v.el.remove();
+          this.labelEls.delete(k);
+        }
+      }
+    }
+    const show = !currentPanel() && this.ready && this.state.settings.camera !== 1;
+    box.style.display = show ? '' : 'none';
+    if (!show) return;
+    const w = window.innerWidth, h = window.innerHeight;
+    const v = new THREE.Vector3();
+    for (const l of this.labelEls.values()) {
+      const d = Math.hypot(l.x - this.px, l.z - this.pz);
+      this.world.toScene(l.x, l.z, v, l.y + 25 + d * 0.012);
+      v.project(this.camera);
+      if (v.z > 1 || v.x < -1.2 || v.x > 1.2 || v.y < -1.2 || v.y > 1.2) {
+        l.el.style.opacity = '0';
+        continue;
+      }
+      const sc = Math.max(0.6, Math.min(1.15, 900 / (d + 300)));
+      l.el.style.opacity = String(Math.min(1, (d - 60) / 150));
+      l.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -100%) scale(${sc})`;
+    }
   }
 
   // ------------------------------------------------------------ HUD

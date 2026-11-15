@@ -19,9 +19,9 @@ export interface Quality {
 }
 
 export const QUALITY: Record<string, Quality> = {
-  nízká: { radius: 1, texSize: 512, trees: 600, farRadius: 1, shadows: false },
-  střední: { radius: 2, texSize: 1024, trees: 1500, farRadius: 2, shadows: true },
-  vysoká: { radius: 2, texSize: 1024, trees: 3200, farRadius: 3, shadows: true },
+  nízká: { radius: 1, texSize: 512, trees: 4500, farRadius: 1, shadows: false },
+  střední: { radius: 2, texSize: 1024, trees: 8000, farRadius: 2, shadows: true },
+  vysoká: { radius: 2, texSize: 1024, trees: 12000, farRadius: 3, shadows: true },
 };
 
 interface NearTile {
@@ -45,6 +45,7 @@ interface NearTile {
 
 interface FarTile {
   key: string;
+  places: PlacePoint[];
   ox: number;
   oz: number;
   group: THREE.Group;
@@ -120,33 +121,82 @@ function gridIndex(n: number): THREE.BufferAttribute {
 }
 
 function treeGeometries(): THREE.BufferGeometry[] {
-  const colorize = (g: THREE.BufferGeometry, c: THREE.Color) => {
+  const colorize = (g: THREE.BufferGeometry, c: number[]) => {
     const n = g.getAttribute('position').count;
     const a = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      a[i * 3] = c.r;
-      a[i * 3 + 1] = c.g;
-      a[i * 3 + 2] = c.b;
-    }
+    for (let i = 0; i < n; i++) a.set(c, i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    g.deleteAttribute('uv');
     return g;
   };
-  const trunk = () => colorize(new THREE.CylinderGeometry(0.18, 0.28, 3, 5).translate(0, 1.5, 0), new THREE.Color(0.32, 0.23, 0.16));
-  const conifer = mergeGeometries([
-    trunk(),
-    colorize(new THREE.ConeGeometry(2.4, 7, 7).translate(0, 5.5, 0), new THREE.Color(0.16, 0.3, 0.17)),
-    colorize(new THREE.ConeGeometry(1.7, 5, 7).translate(0, 9, 0), new THREE.Color(0.18, 0.33, 0.18)),
-  ].map((g) => g.toNonIndexed()))!;
-  const crown = new THREE.IcosahedronGeometry(3, 0);
-  const pos = crown.getAttribute('position');
-  for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) * 0.85);
-  const deciduous = mergeGeometries([
-    trunk(),
-    colorize(crown.translate(0, 5.6, 0), new THREE.Color(0.27, 0.42, 0.18)),
-  ].map((g) => g.toNonIndexed()))!;
-  conifer.computeVertexNormals();
-  deciduous.computeVertexNormals();
-  return [conifer, deciduous];
+  const W = [1, 1, 1];
+  // Koruny: dole tmavší, nahoře světlejší.
+  const shade = (g: THREE.BufferGeometry, y0: number, y1: number) => {
+    const p = g.getAttribute('position');
+    const c = g.getAttribute('color');
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.62 + 0.5 * Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0)));
+      c.setXYZ(i, c.getX(i) * k, c.getY(i) * k, c.getZ(i) * k);
+    }
+    return g;
+  };
+  const trunk = (h: number, r: number) => colorize(new THREE.CylinderGeometry(r * 0.7, r, h, 5).translate(0, h / 2, 0), [0.32, 0.22, 0.15]);
+  const merge = (gs: THREE.BufferGeometry[]) => {
+    const m = mergeGeometries(gs.map((g) => (g.index ? g.toNonIndexed() : g)))!;
+    m.computeVertexNormals();
+    return m;
+  };
+  const conifer = merge([
+    trunk(2.2, 0.28),
+    shade(colorize(new THREE.ConeGeometry(2.3, 5.2, 6).translate(0, 4.2, 0), W), 1.6, 9.9),
+    shade(colorize(new THREE.ConeGeometry(1.6, 4.6, 6).translate(0, 7.6, 0), W), 1.6, 9.9),
+  ]);
+  const crown = new THREE.IcosahedronGeometry(2.9, 0);
+  crown.scale(1, 0.9, 1);
+  const deciduous = merge([trunk(3.2, 0.3), shade(colorize(crown.translate(0, 5.6, 0), W), 3.2, 8.2)]);
+  const bush = merge([shade(colorize(new THREE.IcosahedronGeometry(1.0, 0).scale(1.2, 0.8, 1.2).translate(0, 0.6, 0), W), -0.2, 1.4)]);
+  return [conifer, deciduous, bush];
+}
+
+/** Barva koruny podle druhu, náhody a ročního období. */
+export function treeColor(kind: number, r: number, season: string, out: THREE.Color): THREE.Color {
+  const pick = (list: string[]) => out.set(list[Math.floor(r * list.length) % list.length]);
+  if (kind === 0) pick(season === 'zima' ? ['#2d4a3a', '#34503c', '#2a4436'] : ['#2f5a3c', '#3a6a42', '#2c5236', '#41704a', '#356240']);
+  else if (season === 'podzim') pick(['#d9772a', '#c4462c', '#e2b23a', '#a8572a', '#8c9a3a', '#e08f2f', '#b8352a', '#c9a03a']);
+  else if (season === 'zima') pick(['#7a6a5a', '#6e6052', '#857565']);
+  else if (season === 'jaro') pick(['#7fb24a', '#93c25a', '#6fa444', '#f0d6e0', '#a6cc66']);
+  else pick(kind === 2 ? ['#557d36', '#4d7432', '#62893c'] : ['#5e8f3a', '#6f9c40', '#527f34', '#7aa648', '#4f7a30']);
+  return out;
+}
+
+function lampGeometry(): THREE.BufferGeometry {
+  const col = (g: THREE.BufferGeometry, c: number[]) => {
+    const n = g.getAttribute('position').count;
+    const a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) a.set(c, i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    g.deleteAttribute('uv');
+    return g.index ? g.toNonIndexed() : g;
+  };
+  const g = mergeGeometries([
+    col(new THREE.CylinderGeometry(0.07, 0.1, 5, 5).translate(0, 2.5, 0), [0.18, 0.2, 0.22]),
+    col(new THREE.BoxGeometry(0.35, 0.18, 0.35).translate(0, 5.05, 0), [1, 0.92, 0.7]),
+  ])!;
+  g.computeVertexNormals();
+  return g;
+}
+
+function glowTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const gr = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,240,200,1)');
+  gr.addColorStop(0.25, 'rgba(255,215,140,0.55)');
+  gr.addColorStop(1, 'rgba(255,200,120,0)');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
 }
 
 export class World {
@@ -178,7 +228,12 @@ export class World {
     rail: THREE.MeshStandardMaterial;
     bridge: THREE.MeshStandardMaterial;
     tree: THREE.MeshStandardMaterial;
+    lamp: THREE.MeshStandardMaterial;
+    glow: THREE.PointsMaterial;
   };
+  season = 'léto';
+  private lampGeo = lampGeometry();
+  private treeMeshes = new Set<THREE.InstancedMesh>();
   private treeGeo = treeGeometries();
 
   constructor(private renderer: THREE.WebGLRenderer) {
@@ -202,10 +257,15 @@ export class World {
       path: roadMat(pathTexture(), 'path', 1),
       rail: roadMat(railTexture(), 'rail', 1),
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
-      tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }),
+      tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
+      lamp: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: new THREE.Color(1, 0.85, 0.5), emissiveIntensity: 0 }),
+      glow: new THREE.PointsMaterial({
+        map: glowTexture(), size: 9, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false,
+        blending: THREE.AdditiveBlending, fog: false,
+      }),
     };
     addSnow(this.mats.roofs, false, 'roof');
-    addSnow(this.mats.tree, true, 'tree');
+    addSnow(this.mats.tree, false, 'tree');
     const n = Math.min(4, Math.max(2, (navigator.hardwareConcurrency || 4) - 1));
     for (let i = 0; i < n; i++) {
       const w = new TileWorker();
@@ -365,7 +425,7 @@ export class World {
       map.minFilter = THREE.LinearMipmapLinearFilter;
       map.needsUpdate = true;
     }
-    const m = new THREE.MeshStandardMaterial({ map, roughness: 0.97, metalness: 0 });
+    const m = new THREE.MeshStandardMaterial({ map, roughness: 0.97, metalness: 0, flatShading: true });
     addSnow(m, true, far ? 'far' : 'terrain');
     void key;
     return m;
@@ -406,30 +466,57 @@ export class World {
     if (d.trees && d.trees.length) {
       const t = d.trees;
       const count = t.length / 5;
-      const byKind: number[][] = [[], []];
-      for (let i = 0; i < count; i++) byKind[t[i * 5 + 4]].push(i);
+      const byKind: number[][] = [[], [], []];
+      for (let i = 0; i < count; i++) byKind[t[i * 5 + 4]]?.push(i);
       const m = new THREE.Matrix4();
       const q = new THREE.Quaternion();
-      const s = new THREE.Vector3();
+      const sc3 = new THREE.Vector3();
       const p = new THREE.Vector3();
       const up = new THREE.Vector3(0, 1, 0);
+      const color = new THREE.Color();
       byKind.forEach((list, kind) => {
         if (!list.length) return;
         const im = new THREE.InstancedMesh(this.treeGeo[kind], this.mats.tree, list.length);
+        const rnds = new Float32Array(list.length);
         list.forEach((i, k) => {
           const sc = t[i * 5 + 3];
-          q.setFromAxisAngle(up, (i * 2.399) % (Math.PI * 2));
-          s.set(sc, sc * (0.85 + ((i * 7) % 5) * 0.08), sc);
+          const r = ((i * 2654435761) % 1000) / 1000;
+          rnds[k] = r;
+          q.setFromAxisAngle(up, r * Math.PI * 2);
+          sc3.set(sc, sc * (0.85 + r * 0.35), sc);
           p.set(t[i * 5], t[i * 5 + 1], t[i * 5 + 2]);
-          im.setMatrixAt(k, m.compose(p, q, s));
+          im.setMatrixAt(k, m.compose(p, q, sc3));
+          im.setColorAt(k, treeColor(kind, r, this.season, color));
         });
-        im.castShadow = true;
-        im.receiveShadow = false;
+        im.userData = { kind, rnds };
+        im.castShadow = kind !== 2;
+        im.receiveShadow = true;
         im.computeBoundingSphere();
         im.name = 'trees';
-        disposables.push({ dispose: () => im.dispose() });
+        this.treeMeshes.add(im);
+        disposables.push({ dispose: () => { im.dispose(); this.treeMeshes.delete(im); } });
         group.add(im);
       });
+    }
+    if (d.lamps && d.lamps.length) {
+      const l = d.lamps;
+      const n = l.length / 3;
+      const im = new THREE.InstancedMesh(this.lampGeo, this.mats.lamp, n);
+      const m = new THREE.Matrix4();
+      const gp = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        im.setMatrixAt(i, m.makeTranslation(l[i * 3], l[i * 3 + 1], l[i * 3 + 2]));
+        gp.set([l[i * 3], l[i * 3 + 1] + 5.0, l[i * 3 + 2]], i * 3);
+      }
+      im.computeBoundingSphere();
+      im.castShadow = false;
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.BufferAttribute(gp, 3));
+      gg.computeBoundingSphere();
+      const pts = new THREE.Points(gg, this.mats.glow);
+      pts.name = 'glow';
+      group.add(im, pts);
+      disposables.push({ dispose: () => im.dispose() }, gg);
     }
     this.root.add(group);
     const tile: NearTile = {
@@ -458,7 +545,7 @@ export class World {
     this.root.add(group);
     const disposables: { dispose(): void }[] = [tg, tm];
     if (tm.map) disposables.push(tm.map);
-    this.far.set(key, { key, ox, oz, group, grid: { n: d.n, size: d.size, h: d.heights }, texture: d.texture, disposables });
+    this.far.set(key, { key, places: d.places ?? [], ox, oz, group, grid: { n: d.n, size: d.size, h: d.heights }, texture: d.texture, disposables });
     this.stats.farLoaded = this.far.size;
   }
 
@@ -480,6 +567,17 @@ export class World {
     for (const d of t.disposables) d.dispose();
     t.texture?.close();
     this.far.delete(k);
+  }
+
+  setSeason(season: string) {
+    if (season === this.season) return;
+    this.season = season;
+    const c = new THREE.Color();
+    for (const im of this.treeMeshes) {
+      const { kind, rnds } = im.userData as { kind: number; rnds: Float32Array };
+      for (let k = 0; k < rnds.length; k++) im.setColorAt(k, treeColor(kind, rnds[k], season, c));
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
   }
 
   // ------------------------------------------------------------ dotazy
@@ -614,7 +712,16 @@ export class World {
 
   allPlaces(): PlacePoint[] {
     const out: PlacePoint[] = [];
-    for (const t of this.near.values()) for (const s of t.places) out.push({ ...s, x: s.x + t.ox, z: s.z + t.oz });
+    const seen = new Set<string>();
+    const add = (s: PlacePoint, ox: number, oz: number) => {
+      const x = s.x + ox, z = s.z + oz;
+      const k = `${s.name}|${Math.round(x / 300)}|${Math.round(z / 300)}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ ...s, x, z });
+    };
+    for (const t of this.near.values()) for (const s of t.places) add(s, t.ox, t.oz);
+    for (const t of this.far.values()) for (const s of t.places) add(s, t.ox, t.oz);
     return out;
   }
 
