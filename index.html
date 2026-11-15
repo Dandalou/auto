@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#11161d" />
+    <meta name="description" content="Projeď celou Českou republiku autem, autobusem i pěšky. Skutečné budovy, silnice a zastávky z OpenStreetMap, práce řidiče a správa vlastní dopravní firmy." />
+    <title>Česko na kolech</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='22' width='52' height='22' rx='6' fill='%23d4352d'/%3E%3Crect x='14' y='12' width='30' height='14' rx='4' fill='%23d4352d'/%3E%3Ccircle cx='18' cy='46' r='7' fill='%23222'/%3E%3Ccircle cx='46' cy='46' r='7' fill='%23222'/%3E%3C/svg%3E" />
+    
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div id="loading">
+      <div class="load-box">
+        <h1>Česko na kolech</h1>
+        <p class="sub">Celá republika ze skutečných dat OpenStreetMap</p>
+        <div class="bar"><div id="load-bar"></div></div>
+        <p id="load-text">Spouštím…</p>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div id="top-left" class="panel glass">
+        <div id="loc-name">—</div>
+        <div id="loc-street" class="muted"></div>
+        <div id="loc-tiles" class="muted small"></div>
+      </div>
+      <div id="top-right" class="panel glass">
+        <div id="money">0 Kč</div>
+        <div class="muted small"><span id="clock">10:30</span> · <span id="weather-label">jasno</span> · úroveň <span id="lvl">1</span></div>
+        <div class="xpbar"><div id="xp"></div></div>
+      </div>
+      <div id="menu-bar">
+        <button data-panel="jobs" title="Práce (J)">💼 <span>Práce</span></button>
+        <button data-panel="garage" title="Garáž (G)">🚗 <span>Garáž</span></button>
+        <button data-panel="company" title="Firma (F)">🏢 <span>Firma</span></button>
+        <button data-panel="map" title="Mapa (M)">🗺️ <span>Mapa</span></button>
+        <button data-panel="journal" title="Deník (L)">📖 <span>Deník</span></button>
+        <button data-panel="settings" title="Nastavení (Esc)">⚙️ <span>Nastavení</span></button>
+        <button data-panel="help" title="Ovládání (H)">❔</button>
+      </div>
+      <div id="job" class="panel glass hidden"></div>
+      <div id="hint" class="hidden"></div>
+      <div id="toasts"></div>
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <div id="dash" class="panel glass">
+        <div id="limit" class="limit hidden">50</div>
+        <div><span id="speed">0</span><span class="unit">km/h</span></div>
+        <div class="small muted"><span id="gear">1</span> · <span id="vehname">Osobní auto</span></div>
+        <div class="rpm"><div id="rpm"></div></div>
+      </div>
+      <div id="touch" class="hidden">
+        <div class="tleft">
+          <button data-t="left">◀</button>
+          <button data-t="right">▶</button>
+        </div>
+        <div class="tright">
+          <button data-t="hand">P</button>
+          <button data-t="brake">▼</button>
+          <button data-t="gas">▲</button>
+        </div>
+        <div class="tact">
+          <button data-key="KeyE">E</button>
+          <button data-key="KeyO">O</button>
+          <button data-key="KeyC">📷</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal" class="hidden">
+      <div class="modal-box glass">
+        <button class="close" id="modal-close" aria-label="Zavřít">✕</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

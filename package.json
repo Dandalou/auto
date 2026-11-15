@@ -1,0 +1,36 @@
+{
+  "name": "cesko-na-kolech",
+  "version": "1.0.0",
+  "description": "Projeď celou Českou republiku – skutečná data OSM v prohlížeči",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dandalou/auto.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Dandalou/auto/issues"
+  },
+  "homepage": "https://github.com/Dandalou/auto#readme",
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "earcut": "^3.2.4",
+    "pbf": "^5.1.2",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/earcut": "^3.0.0",
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "private": true,
+  "type": "module"
+}
