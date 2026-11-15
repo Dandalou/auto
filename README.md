@@ -8,8 +8,10 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 
 ## Co hra umí
 
+- **Přesný terén a vegetace z ČÚZK:** výškopis DMR 5G a stromy tam, kde skutečně rostou. Výška stromu se počítá z výšky porostu (DMP 1G − DMR 5G). Mimo republiku se použije Terrarium a lesy z OSM.
 - **Celá republika 1:1.** Dlaždice (~1,6 × 1,6 km) se načítají kolem hráče, terén až k horizontu se dotahuje hrubší vrstvou.
-- **Skutečné budovy** s výškou z OSM (`render_height`), sedlovými střechami u rodinných domů, okny, která v noci svítí, a kolizemi.
+- **Skutečné budovy** s výškou z OSM (`render_height`). Střechy jsou sedlové a valbové nad orientovaným obdélníkem půdorysu, městské bloky dostávají mansardové střechy. K tomu komíny, okna, která v noci svítí, a kolize.
+- **Pouliční lampy** v zastavěném území, popisky obcí přímo ve scéně a roční období (podzimní listí, holé stromy v zimě).
 - **Silnice podle třídy** (dálnice, silnice I.–III. třídy, místní, účelové, polní cesty, chodníky, železnice). Mají vodorovné značení, mosty se zvednutou mostovkou a rychlostní limity.
 - **Jízda:** dynamický model vozidla s pneumatikami, smykem, ruční brzdou, svahy a skoky přes horizonty. Mimo silnici je horší přilnavost, v dešti a na sněhu auto klouže.
 - **Vozidla:** osobní auto, taxi, dodávka, městský a meziměstský autobus, nákladní auto.
@@ -43,7 +45,8 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 
 ```
 OpenFreeMap (vektorové dlaždice OSM, z14) ─┐
-AWS Terrain Tiles (výšky, Terrarium PNG) ──┼─► Web Worker: terén, budovy, silnice, stromy,
+ČÚZK DMR 5G + DMP 1G (terén, vegetace) ───┤
+AWS Terrain Tiles (výšky mimo ČR) ─────────┼─► Web Worker: terén, budovy, silnice, stromy,
                                            │   textura povrchu, kolize, silniční graf, zastávky, adresy
                                            ▼
                          hlavní vlákno: three.js scéna, fyzika, AI, práce, firma, UI
@@ -72,6 +75,7 @@ Při každém pushi do `main` GitHub Actions hru sestaví a nasadí na GitHub Pa
 
 - Mapová data © [přispěvatelé OpenStreetMap](https://www.openstreetmap.org/copyright), licence ODbL.
 - Vektorové dlaždice [OpenFreeMap](https://openfreemap.org) ve schématu [OpenMapTiles](https://openmaptiles.org).
-- Výškopis [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
+- Výškopis a vegetace © [ČÚZK](https://geoportal.cuzk.cz) (DMR 5G, DMP 1G, služba ArcGIS ImageServer), licence CC BY 4.0.
+- Výškopis mimo ČR: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
 - Vyhledávání [Nominatim](https://nominatim.org) (jen na vyžádání hráče).
 - Kód je pod licencí MIT (viz `LICENSE`).

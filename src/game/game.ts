@@ -541,7 +541,7 @@ export class Game {
       this.camera.updateProjectionMatrix();
       return;
     }
-    const base = this.walking ? 4.5 : Math.max(7, v.spec.length * 1.25);
+    const base = (this.walking ? 4.5 : Math.max(7, v.spec.length * 1.25)) * (this.camera.aspect < 1 ? 1.5 : 1);
     const dist = base * this.camDist * (mode === 2 ? 3.2 : 1);
     const pitch = mode === 2 ? Math.max(this.camPitch, 0.7) : this.camPitch;
     desired = target.clone().add(new THREE.Vector3(-fx * dist * Math.cos(pitch), dist * Math.sin(pitch) + (this.walking ? 1.6 : v.spec.height * 0.6), -fz * dist * Math.cos(pitch)));

@@ -115,25 +115,26 @@ kbd { background: #2a3442; border: 1px solid var(--line); border-bottom-width: 2
 #touch .tact button { width: 48px; height: 48px; font-size: 16px; }
 
 @media (max-width: 760px) {
-  #menu-bar { top: auto; bottom: 8px; left: 50%; }
+  #menu-bar { top: auto; bottom: 8px; left: 50%; gap: 4px; }
   #menu-bar button span { display: none; }
-  #menu-bar button { padding: 6px 8px; }
-  #minimap { width: 120px; height: 120px; bottom: 60px; }
-  #dash { bottom: 60px; min-width: 110px; padding: 6px 10px; }
-  #speed { font-size: 30px; }
-  #top-left { max-width: 55vw; padding: 6px 10px; }
-  #top-right { padding: 6px 10px; min-width: 0; }
+  #menu-bar button { padding: 6px 8px; font-size: 16px; }
+  #top-left { max-width: 58vw; padding: 6px 10px; top: 8px; left: 8px; }
+  #loc-name { font-size: 15px; }
+  #loc-tiles { display: none; }
+  #top-right { padding: 6px 10px; min-width: 0; top: 8px; right: 8px; }
+  #top-right .small { font-size: 11px; }
   #money { font-size: 16px; }
-  #job { top: 80px; width: 64vw; font-size: 12px; max-height: 34vh; }
-  #touch .tleft { bottom: 200px; }
-  #touch .tright { bottom: 190px; }
-  #touch .tact { bottom: 300px; }
+  #minimap { width: 104px; height: 104px; top: 74px; left: 8px; bottom: auto; }
+  #dash { top: 74px; right: 8px; bottom: auto; min-width: 96px; padding: 4px 10px; }
+  #speed { font-size: 28px; }
+  .limit { left: auto; right: 0; top: 64px; width: 36px; height: 36px; font-size: 13px; border-width: 4px; }
+  #job { top: 186px; left: 8px; width: calc(100vw - 16px); font-size: 12px; max-height: 26vh; }
+  #hint { bottom: 210px; font-size: 13px; }
+  #touch button { width: 62px; height: 62px; }
+  #touch .tleft { left: 10px; bottom: 64px; gap: 10px; }
+  #touch .tright { right: 10px; bottom: 64px; gap: 10px; }
+  #touch .tright button[data-t=gas] { height: 92px; }
+  #touch .tact { right: 10px; bottom: 170px; flex-direction: column; gap: 8px; }
+  #touch .tact button { width: 46px; height: 46px; }
+  .modal-box { padding: 14px; width: 96vw; max-height: 84vh; }
 }
-
-#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-.plabel { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 800; color: #fff; letter-spacing: .2px;
-  text-shadow: 0 1px 2px rgba(0,0,0,.55), 0 0 8px rgba(0,0,0,.35); transform-origin: 50% 100%; will-change: transform, opacity; }
-.plabel.city { font-size: 22px; }
-.plabel.town { font-size: 18px; }
-.plabel.village { font-size: 15px; }
-.plabel.small { font-size: 13px; font-weight: 700; color: #f4efe2; }

@@ -324,7 +324,7 @@ export class BusJob extends Job {
     const comfort = Math.max(0, 1 - this.comfortEvents * 0.06 - this.crashes * 0.15);
     const score = 0.5 * punct + 0.5 * comfort;
     const km = this.line.legLen.reduce((a, b) => a + b, 0) / 1000;
-    const pay = Math.round((n * 140 + km * 90 + this.carried * 12) * (0.4 + score * 0.9));
+    const pay = Math.round((n * 260 + km * 160 + this.carried * 20) * (0.4 + score * 0.9));
     const stars = Math.round(score * 5);
     let path: [number, number][] = [];
     for (const l of this.line.legs) path = path.concat(path.length ? l.slice(1) : l);
@@ -437,7 +437,7 @@ export class TaxiJob extends Job {
         } else {
           const time = ctx.clock - this.startRide;
           const km = this.rideLen / 1000;
-          const fare = Math.round(60 + km * 32 + time / 60 * 6);
+          const fare = Math.round(90 + km * 45 + time / 60 * 8);
           const tip = Math.max(0, Math.round(fare * (0.15 - this.comfortEvents * 0.05 + (time < this.eta ? 0.1 : -0.05))));
           this.result = {
             pay: fare + tip, xp: Math.round(20 + km * 8),
@@ -516,7 +516,7 @@ export class DeliveryJob extends Job {
         if (this.idx >= this.drops.length) {
           const time = ctx.clock - this.start;
           const inTime = time <= this.limit;
-          const pay = Math.round(this.drops.length * 95 * (v.spec.type === 'dodávka' ? 1.3 : 1) + (inTime ? 250 : 0));
+          const pay = Math.round(this.drops.length * 160 * (v.spec.type === 'dodávka' ? 1.3 : 1) + (inTime ? 400 : 0));
           this.result = {
             pay, xp: 15 * this.drops.length,
             summary: [`Doručeno ${this.drops.length} zásilek za ${fmtTime(time)} (limit ${fmtTime(this.limit)})`, inTime ? 'Bonus za včasné doručení 250 Kč' : 'Bez bonusu – pozdě'],
@@ -565,7 +565,7 @@ export function generateOffers(world: World, x: number, z: number): Offer[] {
       kind: 'bus',
       title: `Autobus ${line.number}: ${line.stops[0].name} → ${line.stops[line.stops.length - 1].name}`,
       detail: `${line.stops.length} zastávek · ${km.toFixed(1)} km · městský autobus`,
-      estPay: Math.round(line.stops.length * 140 + km * 90 + 60),
+      estPay: Math.round(line.stops.length * 260 + km * 160 + 100),
       make: (ctx) => new BusJob(line, ctx),
     });
   }
@@ -591,7 +591,7 @@ export function generateOffers(world: World, x: number, z: number): Offer[] {
         kind: 'taxi',
         title: `Taxi: ${f.street} ${f.name} → ${t.street} ${t.name}`,
         detail: `cca ${km.toFixed(1)} km · osobní auto nebo taxi`,
-        estPay: Math.round(60 + km * 38),
+        estPay: Math.round(90 + km * 50),
         make: (ctx) => new TaxiJob(f, t, ctx),
       });
     }
@@ -617,7 +617,7 @@ export function generateOffers(world: World, x: number, z: number): Offer[] {
         kind: 'delivery',
         title: `Rozvoz: ${drops.length} zásilek po okolí`,
         detail: 'dodávka (s osobním autem nižší výdělek)',
-        estPay: drops.length * 110 + 250,
+        estPay: drops.length * 180 + 400,
         make: () => new DeliveryJob(drops),
       });
     }

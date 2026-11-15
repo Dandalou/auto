@@ -682,6 +682,70 @@ function pitchedRoof(b: BuildCtx, o: NonNullable<ReturnType<typeof obb>>, y1: nu
   }
 }
 
+/** Posune kruh o d směrem do hmoty budovy (doleva od směru hran). Vrací null, pokud by se zvrhl. */
+function insetRing(r: number[][], d: number): number[][] | null {
+  const n = r.length;
+  const out: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i - 1 + n) % n], c = r[i], q = r[(i + 1) % n];
+    let ax = c[0] - p[0], az = c[1] - p[1];
+    let bx = q[0] - c[0], bz = q[1] - c[1];
+    const la = Math.hypot(ax, az) || 1, lb = Math.hypot(bx, bz) || 1;
+    ax /= la; az /= la; bx /= lb; bz /= lb;
+    const n1x = -az, n1z = ax, n2x = -bz, n2z = bx;
+    let mx = n1x + n2x, mz = n1z + n2z;
+    const ml = Math.hypot(mx, mz);
+    if (ml < 1e-3) return null;
+    mx /= ml; mz /= ml;
+    const cos = mx * n1x + mz * n1z;
+    if (cos < 0.3) return null;
+    const k = d / cos;
+    out.push([c[0] + mx * k, c[1] + mz * k]);
+  }
+  return out;
+}
+
+function polyArea(r: number[][]): number {
+  let a = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
+  return a / 2;
+}
+
+/** Mansardová střecha: šikmý pás po obvodu a plochá horní část. */
+function mansardRoof(b: BuildCtx, rings: number[][][], y1: number, rh: number, col: number[], topCol: number[]): boolean {
+  const d = rh * 0.95;
+  const inner: number[][][] = [];
+  for (const r of rings) {
+    const ir = insetRing(r, d);
+    if (!ir) return false;
+    const a0 = polyArea(r), a1 = polyArea(ir);
+    if (Math.sign(a0) !== Math.sign(a1) || Math.abs(a1) < Math.abs(a0) * (a0 > 0 ? 0.35 : 1.0)) return false;
+    inner.push(ir);
+  }
+  const yt = y1 + rh;
+  rings.forEach((r, k) => {
+    const ir = inner[k];
+    for (let i = 0; i < r.length; i++) {
+      const j = (i + 1) % r.length;
+      const a = [r[i][0], y1, r[i][1]], c = [r[j][0], y1, r[j][1]];
+      const ai = [ir[i][0], yt, ir[i][1]], ci = [ir[j][0], yt, ir[j][1]];
+      tri(b.roofs, a, c, ci, col);
+      tri(b.roofs, a, ci, ai, col);
+    }
+  });
+  const flat: number[] = [];
+  const holes: number[] = [];
+  inner.forEach((r, k) => {
+    if (k > 0) holes.push(flat.length / 2);
+    for (const p of r) flat.push(p[0], p[1]);
+  });
+  const idx = earcut(flat, holes);
+  for (let i = 0; i < idx.length; i += 3) {
+    for (const k of [idx[i], idx[i + 2], idx[i + 1]]) b.roofs.vert(flat[k * 2], yt, flat[k * 2 + 1], 0, 1, 0, 0, 0, topCol);
+  }
+  return true;
+}
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
   const layer = vt.layers.building;
   if (!layer) return;
@@ -743,13 +807,18 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         const pts = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
         const bb = obb(pts);
         if (bb && areaM / bb.area > 0.78) {
-          const flatChance = hgt > 15 ? 0.85 : areaM > 1200 ? 0.6 : areaM > 500 ? 0.3 : custom ? 0.25 : 0.06;
+          const flatChance = hgt > 30 ? 0.9 : hgt > 15 ? 0.45 : areaM > 1200 ? 0.6 : areaM > 500 ? 0.3 : custom ? 0.25 : 0.06;
           if ((seed % 1000) / 1000 >= flatChance) {
             const rc = ROOFS[(seed >>> 4) % ROOFS.length];
             pitchedRoof(b, bb, y1, seed, col, rc);
             pitched = true;
           }
         }
+      }
+      if (!pitched && minH < 2.5 && areaM > 80 && hgt <= 60 && hgt >= 7 && (seed % 100) < (hgt > 35 ? 35 : 92)) {
+        const rings = [o, ...poly.holes].map((r) => r.slice(0, -1).map((q) => [q.x * s, q.y * s]));
+        const rc = ROOFS[(seed >>> 4) % ROOFS.length];
+        pitched = mansardRoof(b, rings, y1, Math.min(4, 1.8 + hgt * 0.08), rc, rc.map((v) => v * 0.8));
       }
       if (!pitched) {
         const flat: number[] = [];

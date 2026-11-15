@@ -651,7 +651,7 @@ function settingsPanel(g: Game) {
       <button class="btn" id="s-reset">Začít znovu</button>
     </div>
     <h3>O hře a datech</h3>
-    <p class="legal">Mapová data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">přispěvatelé OpenStreetMap</a> (ODbL), dlaždice <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://openmaptiles.org" target="_blank" rel="noopener">OpenMapTiles</a>. Výškopis: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a> (SRTM, EU-DEM a další). Vyhledávání: Nominatim. Pozice: ${worldToLonLat(g.px, g.pz).lat.toFixed(5)}, ${worldToLonLat(g.px, g.pz).lon.toFixed(5)}.</p>`);
+    <p class="legal">Mapová data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">přispěvatelé OpenStreetMap</a> (ODbL), dlaždice <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://openmaptiles.org" target="_blank" rel="noopener">OpenMapTiles</a>. Terén a vegetace © <a href="https://geoportal.cuzk.cz" target="_blank" rel="noopener">ČÚZK</a> (DMR 5G, DMP 1G, CC BY 4.0), mimo ČR <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a>. Vyhledávání: Nominatim. Pozice: ${worldToLonLat(g.px, g.pz).lat.toFixed(5)}, ${worldToLonLat(g.px, g.pz).lon.toFixed(5)}.</p>`);
   const sel = (id: string) => $(id) as HTMLSelectElement;
   sel('s-q').onchange = () => {
     s.quality = sel('s-q').value;

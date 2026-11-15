@@ -128,7 +128,7 @@ export function defaultState(x: number, z: number): SaveState {
     pos: { x, z, heading: 0 },
     vehicle: 'auto',
     walking: false,
-    money: 20000,
+    money: 40000,
     xp: 0,
     garage: ['auto'],
     stats: { distance: 0, jobs: 0, busStops: 0, passengers: 0, taxiRides: 0, deliveries: 0, crashes: 0, earned: 0 },

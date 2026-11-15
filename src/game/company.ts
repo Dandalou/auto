@@ -8,7 +8,7 @@ import type { Company, CompanyLine, CompanyVehicle, Driver, LineStop } from './s
 const FIRST = ['Jan', 'Petr', 'Jiří', 'Pavel', 'Martin', 'Tomáš', 'Lukáš', 'Jana', 'Eva', 'Hana', 'Lenka', 'Kateřina', 'Marie', 'David', 'Ondřej', 'Veronika', 'Michal', 'Zdeněk', 'Alena', 'Karel'];
 const LAST = ['Novák', 'Svoboda', 'Novotný', 'Dvořák', 'Černý', 'Procházka', 'Kučera', 'Veselý', 'Horák', 'Němec', 'Pokorný', 'Marek', 'Pospíšil', 'Hájek', 'Král', 'Jelínek', 'Růžička', 'Beneš', 'Fiala', 'Sedláček'];
 
-export const FOUND_COST = 300000;
+export const FOUND_COST = 120000;
 export const DEPOT_COST = 1500000;
 
 export function newCompany(name: string, x: number, z: number, place: string): Company {
@@ -42,7 +42,7 @@ export function candidates(seed: number): Driver[] {
 /** Poptávka (cestujících za hodinu) u zastávky podle zástavby v okolí 350 m. */
 export function stopDemand(world: World, x: number, z: number): number {
   const vol = world.buildingVolume(x, z, 350);
-  return Math.round(Math.min(220, 4 + Math.sqrt(vol) / 22));
+  return Math.round(Math.min(320, 6 + Math.sqrt(vol) / 14));
 }
 
 export function addLine(c: Company, world: World, data: { stops: LineStop[]; path: [number, number][]; lengthKm: number; tripMin: number; number: string; name: string }): CompanyLine {
