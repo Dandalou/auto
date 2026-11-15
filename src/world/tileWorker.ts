@@ -1419,6 +1419,7 @@ function buildColliders(edges: Float32Array, circles: Float32Array, sizeM: numbe
 
 function points(vt: VectorTile, s: number) {
   const stops: NamedPoint[] = [];
+  const fuel: NamedPoint[] = [];
   const addresses: NamedPoint[] = [];
   const places: PlacePoint[] = [];
   const streets: StreetLine[] = [];
@@ -1427,9 +1428,14 @@ function points(vt: VectorTile, s: number) {
   if (poi) {
     for (let i = 0; i < poi.length; i++) {
       const f = poi.feature(i);
-      if (f.properties.class !== 'bus') continue;
+      const pc = f.properties.class;
+      if (pc !== 'bus' && pc !== 'fuel') continue;
       const g = f.loadGeometry()[0]?.[0];
       if (!g || !inside(g)) continue;
+      if (pc === 'fuel') {
+        fuel.push({ name: String(f.properties.name ?? 'Čerpací stanice'), x: g.x * s, z: g.y * s });
+        continue;
+      }
       stops.push({ name: String(f.properties.name ?? 'Zastávka'), x: g.x * s, z: g.y * s });
     }
   }
@@ -1469,7 +1475,7 @@ function points(vt: VectorTile, s: number) {
       }
     }
   }
-  return { stops, addresses, places, streets };
+  return { stops, addresses, places, streets, fuel };
 }
 
 // ---------------------------------------------------------------- hlavní

@@ -87,6 +87,8 @@ export interface TileData {
   bridges?: Float32Array;
   roadLines?: RoadLine[];
   stops?: NamedPoint[];
+  /** Čerpací stanice. */
+  fuel?: NamedPoint[];
   addresses?: NamedPoint[];
   places?: PlacePoint[];
   streets?: StreetLine[];

@@ -20,32 +20,35 @@ export interface VehicleSpec {
   gears: number[];
   price: number;
   seats: number;
+  /** Nádrž (l) a průměrná spotřeba (l/100 km). */
+  tank: number;
+  consumption: number;
 }
 
 export const SPECS: Record<VehicleType, VehicleSpec> = {
   auto: {
     type: 'auto', name: 'Osobní auto', mass: 1300, length: 4.4, width: 1.8, height: 1.45, wheelbase: 2.65,
-    power: 110e3, vmax: 55, steerMax: 0.6, brake: 9, gears: [3.6, 2.1, 1.4, 1.05, 0.85, 0.7], price: 0, seats: 4,
+    power: 110e3, vmax: 55, steerMax: 0.6, brake: 9, gears: [3.6, 2.1, 1.4, 1.05, 0.85, 0.7], price: 0, seats: 4, tank: 50, consumption: 7,
   },
   taxi: {
     type: 'taxi', name: 'Taxi', mass: 1450, length: 4.7, width: 1.83, height: 1.47, wheelbase: 2.8,
-    power: 120e3, vmax: 55, steerMax: 0.58, brake: 9, gears: [3.6, 2.1, 1.4, 1.05, 0.85, 0.7], price: 180000, seats: 4,
+    power: 120e3, vmax: 55, steerMax: 0.58, brake: 9, gears: [3.6, 2.1, 1.4, 1.05, 0.85, 0.7], price: 180000, seats: 4, tank: 55, consumption: 7.5,
   },
   dodávka: {
     type: 'dodávka', name: 'Dodávka', mass: 2600, length: 5.9, width: 2.05, height: 2.55, wheelbase: 3.66,
-    power: 105e3, vmax: 42, steerMax: 0.55, brake: 7.5, gears: [4.2, 2.4, 1.5, 1.05, 0.8, 0.65], price: 450000, seats: 3,
+    power: 105e3, vmax: 42, steerMax: 0.55, brake: 7.5, gears: [4.2, 2.4, 1.5, 1.05, 0.8, 0.65], price: 450000, seats: 3, tank: 80, consumption: 10,
   },
   autobus: {
     type: 'autobus', name: 'Městský autobus', mass: 12500, length: 12, width: 2.55, height: 3.1, wheelbase: 5.9,
-    power: 220e3, vmax: 22.5, steerMax: 0.62, brake: 5.5, gears: [3.4, 1.9, 1.4, 1.0, 0.75], price: 1200000, seats: 90,
+    power: 220e3, vmax: 22.5, steerMax: 0.62, brake: 5.5, gears: [3.4, 1.9, 1.4, 1.0, 0.75], price: 1200000, seats: 90, tank: 250, consumption: 35,
   },
   meziměstský: {
     type: 'meziměstský', name: 'Meziměstský autobus', mass: 14000, length: 12.9, width: 2.55, height: 3.4, wheelbase: 6.3,
-    power: 290e3, vmax: 27.7, steerMax: 0.58, brake: 5.5, gears: [3.4, 2.1, 1.5, 1.15, 0.9, 0.72], price: 2200000, seats: 55,
+    power: 290e3, vmax: 27.7, steerMax: 0.58, brake: 5.5, gears: [3.4, 2.1, 1.5, 1.15, 0.9, 0.72], price: 2200000, seats: 55, tank: 400, consumption: 30,
   },
   kamion: {
     type: 'kamion', name: 'Nákladní auto', mass: 16000, length: 10, width: 2.55, height: 3.6, wheelbase: 5.2,
-    power: 300e3, vmax: 25, steerMax: 0.55, brake: 5, gears: [5, 3, 2, 1.5, 1.2, 1, 0.8], price: 1800000, seats: 2,
+    power: 300e3, vmax: 25, steerMax: 0.55, brake: 5, gears: [5, 3, 2, 1.5, 1.2, 1, 0.8], price: 1800000, seats: 2, tank: 400, consumption: 32,
   },
 };
 

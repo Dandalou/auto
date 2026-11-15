@@ -107,6 +107,7 @@ export class Game {
     );
     this.marker.visible = false;
     this.scene.add(this.marker);
+    this.fuel = this.state.fuel ?? 1;
     this.vehicle.x = this.state.pos.x;
     this.vehicle.z = this.state.pos.z;
     this.vehicle.heading = this.state.pos.heading;
@@ -268,6 +269,44 @@ export class Game {
     this.camInit = false;
   }
 
+  /** Nejbližší čerpací stanice v dosahu (30 m). */
+  nearFuel(): { name: string; d: number } | null {
+    let best: { name: string; d: number } | null = null;
+    for (const f of this.world.allFuel()) {
+      const d = Math.hypot(f.x - this.vehicle.x, f.z - this.vehicle.z);
+      if (d < 35 && (!best || d < best.d)) best = { name: f.name, d };
+    }
+    return best;
+  }
+
+  refuel() {
+    const v = this.vehicle;
+    if (this.rental) {
+      this.notify('Firemní vůz tankuje firma.', 'info');
+      return;
+    }
+    const st = this.nearFuel();
+    if (!st) {
+      this.notify('Tankovat lze jen u čerpací stanice.', 'warn');
+      return;
+    }
+    if (v.speed > 0.5) {
+      this.notify('Nejdřív zastavte.', 'warn');
+      return;
+    }
+    const litres = (1 - this.fuel) * v.spec.tank;
+    if (litres < 0.5) {
+      this.notify('Nádrž je plná.', 'info');
+      return;
+    }
+    const price = Math.round(litres * 38.9);
+    this.state.money -= price;
+    this.fuel = 1;
+    this.fuelWarn = false;
+    this.audio.chime();
+    this.notify(`${st.name}: natankováno ${litres.toFixed(1)} l za ${formatMoney(price)}`, 'ok');
+  }
+
   /** Odkaz na aktuální místo. */
   shareLink(): string {
     const { lon, lat } = worldToLonLat(this.px, this.pz);
@@ -333,7 +372,10 @@ export class Game {
     s.pos = { x: this.px, z: this.pz, heading: this.walking ? this.walker.heading : this.vehicle.heading };
     s.walking = this.walking;
     s.settings.time = this.env.time;
-    if (!this.rental) s.vehicle = this.vehicle.spec.type;
+    if (!this.rental) {
+      s.vehicle = this.vehicle.spec.type;
+      s.fuel = this.fuel;
+    }
     saveState(s);
   }
 
@@ -410,6 +452,9 @@ export class Game {
   private speedT = 0;
   private redNode: unknown = null;
   private introT = 0;
+  /** Palivo 0..1. */
+  fuel = 1;
+  private fuelWarn = false;
   private urban = false;
 
   /** Rychlostní limit: v obci max. 50 km/h (kromě dálnic a rychlostních silnic). */
@@ -535,6 +580,7 @@ export class Game {
         this.audio.beep(v.doorsOpen ? 520 : 420, 0.18, 'triangle');
       }
     }
+    if (i.hit('KeyT') && !this.walking) this.refuel();
     if (i.hit('KeyR')) {
       const p = this.snapToRoad(this.px, this.pz);
       if (p) {
@@ -550,6 +596,17 @@ export class Game {
   private updateVehicle(dt: number, inPanel: boolean) {
     const v = this.vehicle;
     const ax = inPanel ? { throttle: 0, brake: 0, steer: 0, handbrake: false } : this.input.axes();
+    // Palivo: spotřeba podle ujeté vzdálenosti a plynu; půjčené vozy tankuje firma.
+    if (!this.rental) {
+      const km = (Math.abs(v.vF) * dt) / 1000;
+      const used = (km * v.spec.consumption * (0.6 + ax.throttle * 0.8)) / 100 + (dt * 0.2 * v.spec.consumption) / 360000;
+      this.fuel = Math.max(0, this.fuel - used / v.spec.tank);
+      if (this.fuel < 0.12 && !this.fuelWarn) {
+        this.fuelWarn = true;
+        this.notify('Dochází palivo – zastavte u čerpací stanice (T = tankovat).', 'warn');
+      }
+      if (this.fuel <= 0) ax.throttle = 0;
+    }
     const obstacles = [...this.traffic.obstacles(), ...this.pedestrians.obstacles()].filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
     v.update(dt, ax, this.world, this.env.grip(), obstacles);
     v.updateAttitude(this.world, dt);
@@ -951,6 +1008,9 @@ export class Game {
       $('gear').textContent = v.gear < 0 ? 'R' : v.speed < 0.3 ? 'N' : String(v.gear);
       $('vehname').textContent = v.spec.name + (this.rental ? ' (půjčený)' : '');
       ($('rpm') as HTMLElement).style.width = `${Math.min(100, (v.rpm / (v.spec.mass > 5000 ? 2400 : 6500)) * 100)}%`;
+      const fe = $('fuel') as HTMLElement;
+      fe.style.width = `${Math.round((this.rental ? 1 : this.fuel) * 100)}%`;
+      fe.classList.toggle('low', !this.rental && this.fuel < 0.12);
       this.urbanT -= 0.1;
       if (this.urbanT <= 0) {
         this.urbanT = 0.5;
@@ -973,6 +1033,7 @@ export class Game {
       } else if (this.job) {
         hint = this.job.actionLabel(this.jobCtx()) ?? '';
       }
+      if (!hint && !this.walking && v.speed < 1 && !this.rental && this.fuel < 0.97 && this.nearFuel()) hint = `T – natankovat (${this.nearFuel()!.name})`;
       if (!hint && !this.walking && v.speed < 0.5 && v.spec.mass > 5000) hint = v.doorsOpen ? 'O – zavřít dveře' : 'O – otevřít dveře';
       if (!hint && !this.walking && this.world.graph.version > 0 && !v.onRoad && v.speed < 1 && this.clock > 5) hint = 'R – zpět na silnici';
     }

@@ -115,6 +115,8 @@ export interface SaveState {
   money: number;
   xp: number;
   garage: VehicleType[];
+  /** Stav nádrže vlastního vozidla 0..1. */
+  fuel?: number;
   stats: Stats;
   visited: Record<string, Visited>;
   company: Company | null;

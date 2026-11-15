@@ -754,6 +754,7 @@ function helpPanel(g: Game, first: boolean) {
       <span><kbd>O</kbd></span><span>dveře autobusu</span>
       <span><kbd>C</kbd></span><span>kamera (za vozem / od řidiče / z výšky); tažení myší otáčí, kolečko oddálí</span>
       <span><kbd>R</kbd></span><span>vrátit se na silnici</span>
+      <span><kbd>T</kbd></span><span>natankovat u čerpací stanice (oranžové body na minimapě)</span>
       <span><kbd>J</kbd> <kbd>G</kbd> <kbd>F</kbd> <kbd>M</kbd> <kbd>L</kbd></span><span>práce, garáž, firma, mapa, deník</span>
       <span><kbd>Esc</kbd></span><span>nastavení (počasí, denní doba, kvalita)</span>
       <span><kbd>U</kbd></span><span>skrýt rozhraní (fotorežim); sdílet místo jde v mapě</span>

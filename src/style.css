@@ -66,6 +66,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #speed { font-size: 44px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .unit { font-size: 14px; color: var(--muted); margin-left: 4px; }
 .rpm { height: 4px; background: rgba(255,255,255,.12); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.fuel { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; }
+.fbar { flex: 1; height: 4px; background: rgba(255,255,255,.12); border-radius: 2px; overflow: hidden; }
+#fuel { height: 100%; width: 100%; background: #e9c46a; }
+#fuel.low { background: #e2483d; }
 #rpm { height: 100%; background: linear-gradient(90deg, var(--ok), var(--warn), var(--accent)); width: 0; }
 .limit { position: absolute; left: -54px; top: 12px; width: 44px; height: 44px; border-radius: 50%; background: #fff; border: 5px solid #d32121; color: #111; font-weight: 800; display: grid; place-items: center; font-size: 15px; }
 

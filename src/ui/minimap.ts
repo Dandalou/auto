@@ -69,6 +69,18 @@ export class Minimap {
       });
       c.stroke();
     }
+    // Čerpací stanice.
+    for (const f of g.world.allFuel()) {
+      const sx = (f.x - px) * scale, sy = (f.z - pz) * scale;
+      if (Math.abs(sx) > W / 2 || Math.abs(sy) > H / 2) continue;
+      c.fillStyle = '#f2a23a';
+      c.strokeStyle = '#3a2a10';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.arc(sx, sy, 5 * (W / 220), 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+    }
     // Ostatní vozidla.
     c.fillStyle = '#ffffff';
     for (const car of g.traffic.cars) {
