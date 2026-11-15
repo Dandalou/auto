@@ -206,6 +206,27 @@ function treeGeometries(): THREE.BufferGeometry[] {
   return [conifer, deciduous, bush];
 }
 
+function lowTreeGeometries(): THREE.BufferGeometry[] {
+  const col = (g: THREE.BufferGeometry, y0: number, y1: number) => {
+    const p = g.getAttribute('position');
+    const a = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.62 + 0.5 * Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0)));
+      a.set([k, k, k], i * 3);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    g.deleteAttribute('uv');
+    const n = g.index ? g.toNonIndexed() : g;
+    n.computeVertexNormals();
+    return n;
+  };
+  return [
+    col(new THREE.ConeGeometry(2.2, 9, 5).translate(0, 5, 0), 0.5, 9.5),
+    col(new THREE.OctahedronGeometry(2.9, 0).scale(1, 1.1, 1).translate(0, 5.4, 0), 2.4, 8.6),
+    col(new THREE.TetrahedronGeometry(1.1, 0).translate(0, 0.6, 0), -0.4, 1.6),
+  ];
+}
+
 /** Barva koruny podle druhu, náhody a ročního období. */
 export function treeColor(kind: number, r: number, season: string, out: THREE.Color): THREE.Color {
   const pick = (list: string[]) => out.set(list[Math.floor(r * list.length) % list.length]);
@@ -283,6 +304,8 @@ export class World {
   private lampGeo = lampGeometry();
   private treeMeshes = new Set<THREE.InstancedMesh>();
   private treeGeo = treeGeometries();
+  /** Jednodušší stromy pro vzdálenější dlaždice. */
+  private treeGeoLow = lowTreeGeometries();
 
   constructor(private renderer: THREE.WebGLRenderer) {
     const f = facadeTextures();
@@ -405,6 +428,17 @@ export class World {
     this.stats.pending = this.pending.size;
     this.pump();
     this.updateMask(tx, ty);
+    // Úroveň detailu stromů podle vzdálenosti dlaždice.
+    for (const t of this.near.values()) {
+      const far = Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty)) > 1;
+      for (const c of t.group.children) {
+        if (c.name === 'trees') {
+          c.visible = !far;
+          const lo = c.userData.low as THREE.Object3D | undefined;
+          if (lo) lo.visible = far;
+        }
+      }
+    }
   }
 
   private updateMask(tx: number, ty: number) {
@@ -557,8 +591,17 @@ export class World {
         im.computeBoundingSphere();
         im.name = 'trees';
         this.treeMeshes.add(im);
+        // Varianta s nižším detailem sdílí matice i barvy instancí.
+        const lo = new THREE.InstancedMesh(this.treeGeoLow[kind], this.mats.tree, list.length);
+        lo.instanceMatrix = im.instanceMatrix;
+        lo.instanceColor = im.instanceColor;
+        lo.boundingSphere = im.boundingSphere;
+        lo.castShadow = false;
+        lo.visible = false;
+        lo.name = 'treesLow';
+        im.userData.low = lo;
         disposables.push({ dispose: () => { im.dispose(); this.treeMeshes.delete(im); } });
-        group.add(im);
+        group.add(im, lo);
       });
     }
     if (d.lamps && d.lamps.length) {
