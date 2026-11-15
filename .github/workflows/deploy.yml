@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Jednou týdně obnovit jízdní řády PID.
+    - cron: '17 3 * * 1'
 
 permissions:
   contents: read
@@ -25,6 +28,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - name: Linky PID z GTFS
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/gtfs
+          curl -sSfL -o /tmp/gtfs/pid.zip https://data.pid.cz/PID_GTFS.zip
+          unzip -q -o /tmp/gtfs/pid.zip -d /tmp/gtfs
+          node scripts/build-pid.mjs /tmp/gtfs public/pid.json
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

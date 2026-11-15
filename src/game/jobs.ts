@@ -7,6 +7,7 @@ import { RoadGraph } from '../world/roadgraph';
 import { buildPerson, updateSign, type VehicleModel } from './models';
 import type { Vehicle, VehicleType } from './vehicle';
 import type { LineStop } from './state';
+import { planPidLines } from './pid';
 
 export interface JobCtx {
   world: World;
@@ -80,6 +81,9 @@ export interface PlannedLine {
   legs: [number, number][][];
   legLen: number[];
   number: string;
+  /** Skutečný jízdní řád (s od první zastávky), u linek PID. */
+  times?: number[];
+  headsign?: string;
 }
 
 /** Naplánuje linku ze skutečných zastávek v okolí bodu. */
@@ -174,12 +178,19 @@ export class BusJob extends Job {
   constructor(public line: PlannedLine, ctx: JobCtx) {
     super();
     const last = line.stops[line.stops.length - 1].name;
-    this.title = `Linka ${line.number}: ${line.stops[0].name} → ${last}`;
-    let t = 0;
-    this.schedule.push(0);
-    for (const len of line.legLen) {
-      t += len / 8.5 + 25; // průměr ~30 km/h + čas na zastávce
-      this.schedule.push(Math.round(t / 30) * 30);
+    this.title = line.headsign
+      ? `Linka ${line.number} (PID) směr ${line.headsign}: ${line.stops[0].name} → ${last}`
+      : `Linka ${line.number}: ${line.stops[0].name} → ${last}`;
+    if (line.times && line.times.length === line.stops.length) {
+      // Skutečný jízdní řád PID (s rezervou na hráčovo seznamování s trasou).
+      this.schedule = line.times.map((t) => Math.round((t * 1.15) / 30) * 30);
+    } else {
+      let t = 0;
+      this.schedule.push(0);
+      for (const len of line.legLen) {
+        t += len / 8.5 + 25; // průměr ~30 km/h + čas na zastávce
+        this.schedule.push(Math.round(t / 30) * 30);
+      }
     }
     ctx.scene.add(this.group);
     // Cestující čekající na zastávkách.
@@ -558,7 +569,18 @@ function addressWithStreet(world: World, p: NamedPoint): NamedPoint & { street: 
 
 export function generateOffers(world: World, x: number, z: number): Offer[] {
   const offers: Offer[] = [];
-  for (let i = 0; i < 3; i++) {
+  // Skutečné linky PID (Praha a Středočeský kraj).
+  for (const line of planPidLines(world, x, z, 3)) {
+    const km = line.legLen.reduce((a, b) => a + b, 0) / 1000;
+    offers.push({
+      kind: 'bus',
+      title: `🚏 ${line.number} → ${line.headsign}: ${line.stops[0].name} → ${line.stops[line.stops.length - 1].name}`,
+      detail: `skutečná linka PID · ${line.stops.length} zastávek · ${km.toFixed(1)} km · jízdní řád ${Math.round(line.times[line.times.length - 1] / 60)} min`,
+      estPay: Math.round((line.stops.length * 260 + km * 160 + 100) * 1.15),
+      make: (ctx) => new BusJob(line, ctx),
+    });
+  }
+  for (let i = 0; i < (offers.length ? 1 : 3); i++) {
     const line = planBusLine(world, x, z, 5 + i * 2);
     if (!line) break;
     if (offers.some((o) => o.title.includes(line.stops[0].name) && o.title.includes(line.stops[line.stops.length - 1].name))) continue;

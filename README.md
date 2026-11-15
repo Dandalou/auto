@@ -19,7 +19,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **Chůze:** vystoupíte (E) a jdete pěšky, auto zůstane zaparkované.
 - **AI doprava** jezdí po skutečné silniční síti.
 - **Práce:**
-  - 🚌 Řidič autobusu: linka po skutečných zastávkách MHD s jízdním řádem, otevíráním dveří, nástupem cestujících a hodnocením přesnosti a plynulosti.
+  - 🚌 Řidič autobusu: v Praze a Středočeském kraji jezdíte **skutečné linky PID** se skutečným pořadím zastávek a jízdním řádem (GTFS). Jinde vznikají linky ze skutečných zastávek MHD z OSM. Patří k tomu otevírání dveří, nástup cestujících a hodnocení přesnosti a plynulosti.
   - 🚕 Taxi: vyzvednutí a odvoz na skutečné adresy, taxametr a spropitné.
   - 📦 Rozvoz zásilek na adresy s časovým limitem.
 - **Management firmy:** založíte dopravní firmu, stavíte depa, kupujete autobusy, najímáte řidiče a zakládáte linky. Poptávka na lince se odvozuje z obestavěného prostoru budov kolem zastávek. Firma vydělává i ve chvíli, kdy jezdíte jinde, a její autobusy potkáte na silnici.
@@ -79,5 +79,6 @@ Při každém pushi do `main` GitHub Actions hru sestaví a nasadí na GitHub Pa
 - Výškopis a vegetace © [ČÚZK](https://geoportal.cuzk.cz) (DMR 5G, DMP 1G, služba ArcGIS ImageServer), licence CC BY 4.0.
 - Výškopis mimo ČR: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
 - Vyhledávání [Nominatim](https://nominatim.org) (jen na vyžádání hráče).
+- Jízdní řády [PID GTFS](https://pid.cz/o-systemu/opendata/) (CC BY 4.0), zpracované skriptem `scripts/build-pid.mjs` při každém nasazení a jednou týdně.
 - Aktuální počasí [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
 - Kód je pod licencí MIT (viz `LICENSE`).

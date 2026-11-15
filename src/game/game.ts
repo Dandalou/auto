@@ -14,6 +14,7 @@ import { buildPerson, buildVehicleModel, updateSign, type VehicleModel } from '.
 import { defaultState, formatMoney, level, loadState, saveState, type SaveState } from './state';
 import { Traffic } from './traffic';
 import { Pedestrians } from './pedestrians';
+import { loadPid } from './pid';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
@@ -130,6 +131,7 @@ export class Game {
       return;
     }
     this.teleport(this.state.pos.x, this.state.pos.z, this.state.pos.heading, !this.state.walking);
+    void loadPid();
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
