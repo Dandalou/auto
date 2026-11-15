@@ -31,7 +31,7 @@ jobs:
       - name: Linky PID z GTFS
         continue-on-error: true
         run: |
-          mkdir -p /tmp/gtfs
+          mkdir -p /tmp/gtfs public
           curl -sSfL -o /tmp/gtfs/pid.zip https://data.pid.cz/PID_GTFS.zip
           unzip -q -o /tmp/gtfs/pid.zip -d /tmp/gtfs
           node scripts/build-pid.mjs /tmp/gtfs public/pid.json
