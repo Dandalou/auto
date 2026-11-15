@@ -5,6 +5,7 @@ import type { Game } from '../game/game';
 import {
   addLine, buyVehicle, candidates, companyValue, DEPOT_COST, FOUND_COST, nearestDepotDist, newCompany, sellValue, stopDemand,
 } from '../game/company';
+import { planPidLines } from '../game/pid';
 import { escapeHtml, generateOffers, planBusLine, simplifyPath, type JobResult, type Offer } from '../game/jobs';
 import { clearState, formatMoney, level } from '../game/state';
 import { SPECS, type VehicleType } from '../game/vehicle';
@@ -223,7 +224,8 @@ function companyPanel(g: Game) {
           <button class="btn" data-delline="${l.id}">Zrušit</button></div></td></tr>`;
     }).join('');
     body = `<p class="muted">Linky přidáte dokončením autobusové práce (tlačítko po dojetí) nebo návrhem z okolních zastávek. Linka musí začínat do 15 km od depa.</p>
-      <div class="row"><button class="btn primary" id="planline">Navrhnout linku ze zastávek v okolí</button></div>
+      <div class="row"><button class="btn primary" id="planline">Navrhnout linku ze zastávek v okolí</button>
+      <button class="btn" id="pidline">Převzít skutečnou linku PID v okolí</button></div>
       ${c.lines.length ? `<table><tr><th>Č.</th><th>Linka</th><th class="num">Vozy</th><th></th></tr>${rows}</table>` : '<p>Zatím žádné linky.</p>'}`;
   } else if (companyTab === 'vozy') {
     const rows = c.vehicles.map((v) => {
@@ -301,6 +303,28 @@ function companyPanel(g: Game) {
       number: p.number, name: `${p.stops[0].name} – ${p.stops[p.stops.length - 1].name}`,
     });
     g.notify(`Linka ${line.number} navržena.`, 'ok');
+    companyPanel(g);
+  });
+  on('#pidline', () => {
+    if (nearestDepotDist(c, g.px, g.pz) > 15000) {
+      g.notify('Jste dál než 15 km od depa.', 'warn');
+      return;
+    }
+    const plans = planPidLines(g.world, g.px, g.pz, 6).filter((p) => !c.lines.some((l) => l.number === p.number));
+    const p = plans[0];
+    if (!p) {
+      g.notify('V okolí není žádná linka PID (nebo už ji provozujete).', 'warn');
+      return;
+    }
+    let path: [number, number][] = [];
+    for (const l of p.legs) path = path.concat(path.length ? l.slice(1) : l);
+    const km = p.legLen.reduce((a, b) => a + b, 0) / 1000;
+    const line = addLine(c, g.world, {
+      stops: p.stops.map((s) => ({ name: s.name, x: s.x, z: s.z, demand: stopDemand(g.world, s.x, s.z) })),
+      path: simplifyPath(path, 4), lengthKm: km, tripMin: Math.max(5, p.times[p.times.length - 1] / 60),
+      number: p.number, name: `${p.stops[0].name} – ${p.stops[p.stops.length - 1].name} (směr ${p.headsign})`,
+    });
+    g.notify(`Převzata linka PID ${line.number}.`, 'ok');
     companyPanel(g);
   });
   on('[data-addveh]', (el) => {
