@@ -135,6 +135,16 @@ export class Game {
       console.error(e);
       return;
     }
+    // Sdílený odkaz: #50.08750/14.42050
+    const m = /^#(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)/.exec(location.hash);
+    if (m) {
+      const p = lonLatToWorld(Number(m[2]), Number(m[1]));
+      this.state.pos = { x: p.x, z: p.z, heading: 0 };
+      this.state.walking = false;
+      this.walking = false;
+      this.state.tutorialDone = true;
+      history.replaceState(null, '', location.pathname);
+    }
     this.teleport(this.state.pos.x, this.state.pos.z, this.state.pos.heading, !this.state.walking);
     void loadPid();
     this.renderer.setAnimationLoop(() => this.frame());
@@ -256,6 +266,12 @@ export class Game {
       this.walking = false;
     }
     this.camInit = false;
+  }
+
+  /** Odkaz na aktuální místo. */
+  shareLink(): string {
+    const { lon, lat } = worldToLonLat(this.px, this.pz);
+    return `${location.origin}${location.pathname}#${lat.toFixed(5)}/${lon.toFixed(5)}`;
   }
 
   notify(msg: string, kind: 'ok' | 'warn' | 'info' = 'info') {
@@ -501,6 +517,11 @@ export class Game {
       }
     }
     if (inPanel || !this.ready) return;
+    if (i.hit('KeyU')) {
+      // Fotorežim: skrýt rozhraní.
+      $('hud').classList.toggle('hidden');
+      $('labels').classList.toggle('hidden');
+    }
     if (i.hit('KeyC')) {
       this.state.settings.camera = (this.state.settings.camera + 1) % 3;
       this.camInit = false;

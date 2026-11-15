@@ -451,6 +451,7 @@ function mapPanel(g: Game) {
       <button class="btn" id="dosearch">Hledat</button>
       <button class="btn" id="zoomme">Kde jsem</button>
       <button class="btn" id="zoomcz">Celá ČR</button>
+      <button class="btn" id="share">🔗 Sdílet místo</button>
     </div>
     <div id="results" class="list"></div>
     <canvas id="bigmap"></canvas>
@@ -504,6 +505,15 @@ function mapPanel(g: Game) {
     mapView.cz = wz - my / mapView.scale;
     draw();
   }, { passive: false });
+  on('#share', () => {
+    const link = g.shareLink();
+    const done = () => g.notify('Odkaz na toto místo zkopírován do schránky.', 'ok');
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      void navigator.share({ title: 'Česko na kolech', text: g.location.place || 'Podívej, kde jsem', url: link }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(link).then(done, () => prompt('Odkaz na toto místo:', link));
+    }
+  });
   on('#zoomme', () => {
     mapView = { cx: g.px, cz: g.pz, scale: 0.25 * dpr };
     draw();
@@ -746,6 +756,7 @@ function helpPanel(g: Game, first: boolean) {
       <span><kbd>R</kbd></span><span>vrátit se na silnici</span>
       <span><kbd>J</kbd> <kbd>G</kbd> <kbd>F</kbd> <kbd>M</kbd> <kbd>L</kbd></span><span>práce, garáž, firma, mapa, deník</span>
       <span><kbd>Esc</kbd></span><span>nastavení (počasí, denní doba, kvalita)</span>
+      <span><kbd>U</kbd></span><span>skrýt rozhraní (fotorežim); sdílet místo jde v mapě</span>
     </div>
     <p class="muted small">Funguje i herní ovladač (páčka řízení, spouště plyn a brzda) a na mobilu dotyková tlačítka.</p>
     <h3>Jak hrát</h3>

@@ -26,6 +26,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **Deník:** navštívená města, obce a osady a statistiky.
 - **Mapa celé ČR** s vyhledáváním adres (Nominatim) a přenosem kamkoli.
 - **Počasí a čas:** denní doba, roční období (sníh na horách, v zimě všude), déšť, sníh, mlha a oblaka.
+- **Sdílení místa** odkazem (`…/auto/#50.08750/14.42050`), fotorežim bez rozhraní (U).
 - Ovládání klávesnicí, herním ovladačem i dotykem na mobilu. Postup se ukládá v prohlížeči a jde exportovat.
 
 ## Ovládání
