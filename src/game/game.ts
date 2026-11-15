@@ -393,6 +393,7 @@ export class Game {
   realWeather = '';
   private speedT = 0;
   private redNode: unknown = null;
+  private introT = 0;
   private urban = false;
 
   /** Rychlostní limit: v obci max. 50 km/h (kromě dálnic a rychlostních silnic). */
@@ -476,6 +477,7 @@ export class Game {
       this.walker.y = this.world.groundHeight(this.walker.x, this.walker.z, 9999);
     }
     this.ready = true;
+    this.introT = 3.2;
     $('loading').classList.add('fade');
     $('hud').classList.remove('hidden');
     setTimeout(() => $('loading').classList.add('hidden'), 700);
@@ -676,6 +678,16 @@ export class Game {
         desired.z = target.z + (desired.z - target.z) * t;
         desired.y = Math.max(desired.y, target.y + 3);
       }
+    }
+    // Úvodní přílet kamery z výšky.
+    if (this.introT > 0) {
+      this.introT -= dt;
+      const k = Math.max(0, this.introT / 3.2);
+      const e = k * k * (3 - 2 * k);
+      const high = target.clone().add(new THREE.Vector3(-fx * 260, 380, -fz * 260));
+      desired.lerp(high, e);
+      this.camPos.copy(desired);
+      this.camInit = true;
     }
     if (!this.camInit) {
       this.camPos.copy(desired);
