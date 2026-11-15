@@ -16,6 +16,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **Silnice podle třídy** (dálnice, silnice I.–III. třídy, místní, účelové, polní cesty, chodníky, železnice). Mají vodorovné značení, mosty se zvednutou mostovkou a rychlostní limity.
 - **Jízda:** dynamický model vozidla s pneumatikami, smykem, ruční brzdou, svahy a skoky přes horizonty. Mimo silnici je horší přilnavost, v dešti a na sněhu auto klouže.
 - **Vozidla:** osobní auto, taxi, dodávka, městský a meziměstský autobus, nákladní auto.
+- **Poškození:** nárazy snižují stav vozidla a výkon, oprava v garáži. Klakson (Q) a pískání pneumatik ve smyku.
 - **Palivo:** spotřeba podle vozidla a stylu jízdy, tankování na skutečných čerpacích stanicích z OSM (T).
 - **Chůze:** vystoupíte (E) a jdete pěšky, auto zůstane zaparkované.
 - **AI doprava** jezdí po skutečné silniční síti a staví na **semaforech** (odvozených na velkých městských křižovatkách). Po chodnících chodí **chodci**.
@@ -42,6 +43,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 | C | kamera; myší tažení otáčí, kolečko oddaluje |
 | R | zpět na silnici |
 | T | natankovat u čerpací stanice |
+| Q | klakson |
 | U | skrýt rozhraní (fotorežim) |
 | J / G / F / M / L | práce / garáž / firma / mapa / deník |
 | Esc | nastavení |

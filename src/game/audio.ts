@@ -87,4 +87,58 @@ export class AudioFx {
   crash() {
     this.beep(90, 0.25, 'sawtooth');
   }
+
+  private hornNodes: { o1: OscillatorNode; o2: OscillatorNode; g: GainNode } | null = null;
+
+  horn(on: boolean) {
+    if (!this.ctx || !this.enabled) return;
+    if (on && !this.hornNodes) {
+      const g = this.ctx.createGain();
+      g.gain.value = 0.12;
+      const o1 = this.ctx.createOscillator();
+      const o2 = this.ctx.createOscillator();
+      o1.type = o2.type = 'square';
+      o1.frequency.value = 415;
+      o2.frequency.value = 523;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 1800;
+      o1.connect(f);
+      o2.connect(f);
+      f.connect(g).connect(this.master);
+      o1.start();
+      o2.start();
+      this.hornNodes = { o1, o2, g };
+    } else if (!on && this.hornNodes) {
+      const h = this.hornNodes;
+      h.g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      h.o1.stop(this.ctx.currentTime + 0.1);
+      h.o2.stop(this.ctx.currentTime + 0.1);
+      this.hornNodes = null;
+    }
+  }
+
+  private squealGain: GainNode | null = null;
+
+  /** Pískání pneumatik podle míry smyku (0..1). */
+  squeal(amount: number) {
+    if (!this.ctx) return;
+    if (!this.squealGain) {
+      const buf = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 2400;
+      f.Q.value = 6;
+      this.squealGain = this.ctx.createGain();
+      this.squealGain.gain.value = 0;
+      src.connect(f).connect(this.squealGain).connect(this.master);
+      src.start();
+    }
+    this.squealGain.gain.setTargetAtTime(this.enabled ? Math.min(0.25, amount * 0.3) : 0, this.ctx.currentTime, 0.05);
+  }
 }

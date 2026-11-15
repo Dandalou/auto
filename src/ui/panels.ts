@@ -146,9 +146,18 @@ function garagePanel(g: Game) {
         : `<div class="pay">${formatMoney(s.price)}</div><button class="btn" data-buy="${t}" ${g.state.money >= s.price ? '' : 'disabled'}>Koupit</button>`}
     </div>`;
   }).join('');
+  const repair = Math.round((1 - g.condition) * 30000 * (g.vehicle.spec.mass > 5000 ? 3 : 1));
   show('garage', `<h2>Garáž</h2>
     <p class="muted">Vlastní vozidla můžete kdykoli přistavit na nejbližší silnici. Peníze vyděláte prací (J).</p>
+    <div class="row" style="margin-bottom:12px">Stav vozidla: <b class="${g.condition < 0.5 ? 'warn' : ''}">${Math.round(g.condition * 100)} %</b>
+      <button class="btn" id="repair" ${repair > 0 && !g.rental ? '' : 'disabled'}>Opravit (${formatMoney(repair)})</button></div>
     <div class="cards">${cards}</div>`);
+  on('#repair', () => {
+    g.state.money -= repair;
+    g.condition = 1;
+    g.notify('Vozidlo opraveno.', 'ok');
+    garagePanel(g);
+  });
   on('[data-use]', (el) => {
     if (g.job && g.rental) g.cancelJob();
     g.setVehicle(el.dataset.use as VehicleType);
@@ -754,6 +763,7 @@ function helpPanel(g: Game, first: boolean) {
       <span><kbd>O</kbd></span><span>dveře autobusu</span>
       <span><kbd>C</kbd></span><span>kamera (za vozem / od řidiče / z výšky); tažení myší otáčí, kolečko oddálí</span>
       <span><kbd>R</kbd></span><span>vrátit se na silnici</span>
+      <span><kbd>Q</kbd></span><span>klakson</span>
       <span><kbd>T</kbd></span><span>natankovat u čerpací stanice (oranžové body na minimapě)</span>
       <span><kbd>J</kbd> <kbd>G</kbd> <kbd>F</kbd> <kbd>M</kbd> <kbd>L</kbd></span><span>práce, garáž, firma, mapa, deník</span>
       <span><kbd>Esc</kbd></span><span>nastavení (počasí, denní doba, kvalita)</span>

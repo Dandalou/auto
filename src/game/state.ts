@@ -117,6 +117,8 @@ export interface SaveState {
   garage: VehicleType[];
   /** Stav nádrže vlastního vozidla 0..1. */
   fuel?: number;
+  /** Stav vlastního vozidla 0..1 (poškození z nárazů). */
+  condition?: number;
   stats: Stats;
   visited: Record<string, Visited>;
   company: Company | null;

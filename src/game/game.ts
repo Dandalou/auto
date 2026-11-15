@@ -108,6 +108,7 @@ export class Game {
     this.marker.visible = false;
     this.scene.add(this.marker);
     this.fuel = this.state.fuel ?? 1;
+    this.condition = this.state.condition ?? 1;
     this.vehicle.x = this.state.pos.x;
     this.vehicle.z = this.state.pos.z;
     this.vehicle.heading = this.state.pos.heading;
@@ -375,6 +376,7 @@ export class Game {
     if (!this.rental) {
       s.vehicle = this.vehicle.spec.type;
       s.fuel = this.fuel;
+      s.condition = this.condition;
     }
     saveState(s);
   }
@@ -454,6 +456,8 @@ export class Game {
   private introT = 0;
   /** Palivo 0..1. */
   fuel = 1;
+  /** Stav vozidla 0..1. */
+  condition = 1;
   private fuelWarn = false;
   private urban = false;
 
@@ -581,6 +585,7 @@ export class Game {
       }
     }
     if (i.hit('KeyT') && !this.walking) this.refuel();
+    this.audio.horn(!inPanel && !this.walking && i.down('KeyQ'));
     if (i.hit('KeyR')) {
       const p = this.snapToRoad(this.px, this.pz);
       if (p) {
@@ -606,6 +611,8 @@ export class Game {
         this.notify('Dochází palivo – zastavte u čerpací stanice (T = tankovat).', 'warn');
       }
       if (this.fuel <= 0) ax.throttle = 0;
+      // Poškozené vozidlo má menší výkon.
+      if (this.condition < 0.5) ax.throttle *= 0.5 + this.condition;
     }
     const obstacles = [...this.traffic.obstacles(), ...this.pedestrians.obstacles()].filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
     v.update(dt, ax, this.world, this.env.grip(), obstacles);
@@ -616,6 +623,11 @@ export class Game {
         this.audio.crash();
         this.state.stats.crashes++;
         this.crashCool = 1;
+        if (!this.rental) {
+          const before = this.condition;
+          this.condition = Math.max(0, this.condition - Math.min(0.35, imp.speed * 0.012));
+          if (before >= 0.5 && this.condition < 0.5) this.notify('Vozidlo je poškozené – opravte ho v garáži (G).', 'warn');
+        }
       }
     }
     if (!this.job) v.impacts.length = 0;
@@ -652,6 +664,7 @@ export class Game {
     m.brakeMat.emissiveIntensity = ax.brake > 0.1 && v.vF > 0.3 ? 3 : night > 0.35 ? 1 : 0.2;
     this.state.stats.distance += Math.abs(v.vF) * dt;
     this.audio.update(v.rpm, ax.throttle, v.speed, v.spec.mass > 5000, this.env.weather === 'déšť', true);
+    this.audio.squeal(v.airborne ? 0 : Math.max(0, (Math.abs(v.vL) - 1.5) / 4) + (ax.handbrake && v.speed > 4 ? 0.5 : 0));
     this.walker.mesh.visible = false;
     m.root.visible = this.state.settings.camera !== 1 || v.spec.mass > 5000;
   }
@@ -685,6 +698,7 @@ export class Game {
     this.model.root.visible = true;
     if (this.model.headlights) this.model.headlights.intensity = 0;
     this.audio.update(0, 0, 0, false, this.env.weather === 'déšť', false);
+    this.audio.squeal(0);
   }
 
   private updateCamera(dt: number) {
