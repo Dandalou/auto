@@ -8,6 +8,7 @@ import type { World } from '../world/world';
 import { buildVehicleModel, updateSign, type VehicleModel } from './models';
 import { SPECS, type VehicleSpec, type VehicleType } from './vehicle';
 import type { CompanyLine } from './state';
+import type { Signals } from './signals';
 
 interface AICar {
   spec: VehicleSpec;
@@ -39,6 +40,7 @@ export class Traffic {
   enabled = true;
   private spawnT = 0;
   private lineCars = new Map<string, AICar>();
+  signals: Signals | null = null;
 
   constructor(private world: World) {}
 
@@ -189,6 +191,11 @@ export class Traffic {
         const turn = this.turnAhead(c);
         const cornerV = turn < 0.25 ? limit : Math.max(4, 14 - turn * 7);
         let target = remain < 25 ? Math.min(limit, cornerV + remain * 0.35) : limit;
+        // Semafor na konci hrany.
+        if (this.signals && remain < 45) {
+          const light = this.signals.lightFor(this.nodeOf(c), e);
+          if (light === 'red' || (light === 'yellow' && remain > 14)) target = Math.min(target, Math.max(0, (remain - 9) * 0.55));
+        }
         // Odstup od vozidel před sebou.
         const fx = Math.sin(c.heading), fz = -Math.cos(c.heading);
         const ahead = (ox: number, oz: number) => {

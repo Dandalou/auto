@@ -15,6 +15,7 @@ import { defaultState, formatMoney, level, loadState, saveState, type SaveState 
 import { Traffic } from './traffic';
 import { Pedestrians } from './pedestrians';
 import { loadPid } from './pid';
+import { Signals } from './signals';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
@@ -33,6 +34,7 @@ export class Game {
   readonly env: Environment;
   readonly traffic: Traffic;
   readonly pedestrians: Pedestrians;
+  readonly signals: Signals;
   readonly audio = new AudioFx();
   readonly input: Input;
   readonly minimap: Minimap;
@@ -84,6 +86,9 @@ export class Game {
     this.env = new Environment(this.scene, this.renderer);
     this.traffic = new Traffic(this.world);
     this.scene.add(this.traffic.group);
+    this.signals = new Signals(this.world);
+    this.scene.add(this.signals.group);
+    this.traffic.signals = this.signals;
     this.pedestrians = new Pedestrians(this.world);
     this.scene.add(this.pedestrians.group);
     this.input = new Input(canvas);
@@ -175,6 +180,7 @@ export class Game {
     this.weatherT = 3;
     this.traffic.clear();
     this.pedestrians.clear();
+    this.signals.clear();
     this.world.rebase(x, z);
     this.camInit = false;
     $('loading').classList.remove('hidden', 'fade');
@@ -345,6 +351,7 @@ export class Game {
       this.updateJob(dt);
       this.traffic.update(dt, this.px, this.pz, this.walking ? null : this.vehicle, this.state.company?.lines ?? [], this.env.night);
       this.pedestrians.update(dt, this.px, this.pz, this.walking ? null : this.vehicle);
+      this.signals.update(dt, this.px, this.pz);
       this.placeT -= dt;
       if (this.placeT <= 0) {
         this.placeT = 1;
@@ -385,6 +392,7 @@ export class Game {
   weatherT = 0;
   realWeather = '';
   private speedT = 0;
+  private redNode: unknown = null;
   private urban = false;
 
   /** Rychlostní limit: v obci max. 50 km/h (kromě dálnic a rychlostních silnic). */
@@ -531,6 +539,14 @@ export class Game {
       }
     }
     if (!this.job) v.impacts.length = 0;
+    // Jízda na červenou.
+    const sig = this.signals.ahead(v.x, v.z, v.heading);
+    if (sig && sig.dist < 2 && sig.light === 'red' && v.vF > 3 && this.redNode !== sig.node) {
+      this.redNode = sig.node;
+      this.audio.beep(300, 0.25, 'square');
+      this.notify('Projeli jste na červenou!', 'warn');
+      if (this.job) this.job.speeding++;
+    }
     // Přestupky při práci: delší jízda o víc než 10 km/h nad limit.
     const lim = this.speedLimit(v.onRoad);
     if (this.job && lim && Math.abs(v.vF) * 3.6 > lim + 10) {

@@ -17,7 +17,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **Jízda:** dynamický model vozidla s pneumatikami, smykem, ruční brzdou, svahy a skoky přes horizonty. Mimo silnici je horší přilnavost, v dešti a na sněhu auto klouže.
 - **Vozidla:** osobní auto, taxi, dodávka, městský a meziměstský autobus, nákladní auto.
 - **Chůze:** vystoupíte (E) a jdete pěšky, auto zůstane zaparkované.
-- **AI doprava** jezdí po skutečné silniční síti.
+- **AI doprava** jezdí po skutečné silniční síti a staví na **semaforech** (odvozených na velkých městských křižovatkách). Po chodnících chodí **chodci**.
 - **Práce:**
   - 🚌 Řidič autobusu: v Praze a Středočeském kraji jezdíte **skutečné linky PID** se skutečným pořadím zastávek a jízdním řádem (GTFS). Jinde vznikají linky ze skutečných zastávek MHD z OSM. Patří k tomu otevírání dveří, nástup cestujících a hodnocení přesnosti a plynulosti.
   - 🚕 Taxi: vyzvednutí a odvoz na skutečné adresy, taxametr a spropitné.

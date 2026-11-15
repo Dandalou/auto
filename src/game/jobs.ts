@@ -346,7 +346,7 @@ export class BusJob extends Job {
       summary: [
         `Zastávek: ${n}, ujeto ${km.toFixed(1)} km, svezeno ${this.carried} cestujících`,
         `Přesnost: ${Math.round(punct * 100)} % (zpoždění nad 2 min: ${late}×)`,
-        `Plynulost a předpisy: ${Math.round(comfort * 100)} % (prudké manévry ${this.comfortEvents}×, nárazy ${this.crashes}×, rychlost ${this.speeding}×)`,
+        `Plynulost a předpisy: ${Math.round(comfort * 100)} % (prudké manévry ${this.comfortEvents}×, nárazy ${this.crashes}×, přestupky ${this.speeding}×)`,
         `Hodnocení: ${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`,
       ],
       stats: { busStops: n, passengers: this.carried },
