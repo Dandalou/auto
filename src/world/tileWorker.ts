@@ -94,6 +94,15 @@ class ElevSampler {
     return h < -100 ? 0 : h;
   }
 
+  /** Jako sample, ale NaN tam, kde chybí data (nenačtená dlaždice). */
+  sampleSafe(gx: number, gy: number): number {
+    const x = Math.floor(gx - 0.5), y = Math.floor(gy - 0.5);
+    for (const [ix, iy] of [[x, y], [x + 1, y + 1]]) {
+      if (!this.tiles.get(`${Math.floor(ix / 256)}/${Math.floor(iy / 256)}`)) return NaN;
+    }
+    return this.sample(gx, gy);
+  }
+
   sample(gx: number, gy: number): number {
     const x = gx - 0.5;
     const y = gy - 0.5;
@@ -123,8 +132,20 @@ async function loadCuzk(service: string, z: number, x: number, y: number, n: num
   const y0 = o - (y + 1) * S - p / 2, y1 = o - y * S + p / 2;
   const url = `${CUZK}/${service}/ImageServer/exportImage?bbox=${x0.toFixed(2)},${y0.toFixed(2)},${x1.toFixed(2)},${y1.toFixed(2)}&bboxSR=3857&imageSR=3857&size=${n},${n}&format=bip&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation&f=image`;
   try {
-    const r = await fetchRetry(url, 2);
-    if (!r) return null;
+    // Mezipaměť prohlížeče: ČÚZK neposílá cache hlavičky, ukládáme si odpovědi sami.
+    let cache: Cache | null = null;
+    try {
+      cache = await caches.open('cuzk-v1');
+    } catch {
+      cache = null;
+    }
+    let r = cache ? await cache.match(url) : undefined;
+    if (!r) {
+      const f = await fetchRetry(url, 2);
+      if (!f) return null;
+      r = f;
+      if (cache) void cache.put(url, f.clone()).catch(() => {});
+    }
     const buf = await r.arrayBuffer();
     if (buf.byteLength < n * n * 4) return null;
     const f = new Float32Array(buf.slice(0, n * n * 4));
@@ -798,7 +819,7 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
           u = addWall(b, ax, az, bx, bz, y0, y1, u, col);
-          if (minH < 2.5) b.edges.push(ax, az, bx, bz);
+          if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (hgt <= 24 ? 4 : 0));
         }
       }
       // Střecha: šikmá nad téměř obdélníkovým půdorysem, jinak plochá.
@@ -846,6 +867,8 @@ interface RoadCtx {
   s: number;
   height: (lx: number, lz: number) => number;
   globalHeight: (lx: number, lz: number) => number;
+  heightSafe: (lx: number, lz: number) => number;
+  size: number;
   marked: MeshBuf;
   plain: MeshBuf;
   paths: MeshBuf;
@@ -857,7 +880,7 @@ interface RoadCtx {
 
 function ribbon(
   m: MeshBuf, pts: number[][], width: number, yOff: number, heights: number[] | null,
-  r: RoadCtx, sides: boolean,
+  r: RoadCtx, sides: boolean, caps = false,
 ) {
   // pts: [x, z] v metrech, už převzorkované.
   const n = pts.length;
@@ -897,9 +920,8 @@ function ribbon(
     if (heights) {
       ly = ry = heights[i] + yOff;
     } else {
-      const hc = r.height(p[0], p[1]);
-      ly = Math.max(r.height(lx, lz), hc) + yOff;
-      ry = Math.max(r.height(rx, rz), hc) + yOff;
+      // Terén pod silnicí je zarovnaný (flattenRoads), takže stačí výška osy.
+      ly = ry = r.height(p[0], p[1]) + yOff;
     }
     L.push([lx, ly, lz]);
     R.push([rx, ry, rz]);
@@ -914,22 +936,57 @@ function ribbon(
     m.vert(c[0], c[1], c[2], 0, 1, 0, 0, vc);
     m.vert(b[0], b[1], b[2], 0, 1, 0, 1, va);
     m.vert(d[0], d[1], d[2], 0, 1, 0, 1, vc);
-    if (sides) {
+    // Zábradlí a podhled jen tam, kde je mostovka znatelně nad terénem.
+    const lift = sides ? Math.min(a[1] - r.height(pts[i][0], pts[i][1]), c[1] - r.height(pts[i + 1][0], pts[i + 1][1])) : 0;
+    if (sides && lift > 2.5) {
       for (const [p, q] of [[a, c], [d, b]] as number[][][]) {
         const dx = q[0] - p[0], dz = q[2] - p[2];
         const l = Math.hypot(dx, dz) || 1;
         const nx = dz / l, nz = -dx / l;
-        const h0 = 1.4;
+        const h0 = 0.9;
         const s = r.sides;
         // Podhled mostovky.
         s.vert(p[0], p[1] - h0, p[2], nx, 0, nz);
         s.vert(q[0], q[1] - h0, q[2], nx, 0, nz);
-        s.vert(q[0], q[1] + 0.9, q[2], nx, 0, nz);
+        s.vert(q[0], q[1] + 0.6, q[2], nx, 0, nz);
         s.vert(p[0], p[1] - h0, p[2], nx, 0, nz);
-        s.vert(q[0], q[1] + 0.9, q[2], nx, 0, nz);
-        s.vert(p[0], p[1] + 0.9, p[2], nx, 0, nz);
+        s.vert(q[0], q[1] + 0.6, q[2], nx, 0, nz);
+        s.vert(p[0], p[1] + 0.6, p[2], nx, 0, nz);
       }
     }
+  }
+  // Zakulacené konce: silnice v křižovatkách a slepé konce navazují hladce.
+  if (caps) {
+    const onEdge = (q: number[]) => q[0] < 0.6 || q[1] < 0.6 || q[0] > r.size - 0.6 || q[1] > r.size - 0.6;
+    const cap = (i: number, dirSign: number) => {
+      const p = pts[i];
+      if (onEdge(p)) return;
+      const y = (L[i][1] + R[i][1]) / 2;
+      const o = pts[i + (dirSign > 0 ? -1 : 1)];
+      let dx = p[0] - o[0], dz = p[1] - o[1];
+      const l = Math.hypot(dx, dz) || 1;
+      dx /= l;
+      dz /= l;
+      const nx = dz, nz = -dx; // levá normála
+      const seg = 7;
+      const v = vs[i] / 8;
+      let prev = [p[0] + nx * hw, p[1] + nz * hw];
+      for (let k = 1; k <= seg; k++) {
+        const a = (k / seg) * Math.PI;
+        const cx = Math.cos(a), sx = Math.sin(a);
+        // Otáčení od levé normály přes směr ven k pravé normále.
+        const q = [p[0] + (nx * cx + dx * sx) * hw, p[1] + (nz * cx + dz * sx) * hw];
+        // Pořadí vrcholů tak, aby líc mířil nahoru (jinak DoubleSide otočí normálu a víčko ztmavne).
+        const cr = (prev[0] - p[0]) * (q[1] - p[1]) - (prev[1] - p[1]) * (q[0] - p[0]);
+        const [b1, b2] = cr < 0 ? [prev, q] : [q, prev];
+        m.vert(p[0], y, p[1], 0, 1, 0, 0.36, v);
+        m.vert(b1[0], y, b1[1], 0, 1, 0, 0.36, v);
+        m.vert(b2[0], y, b2[1], 0, 1, 0, 0.36, v);
+        prev = q;
+      }
+    };
+    cap(0, -1);
+    cap(n - 1, 1);
   }
 }
 
@@ -943,6 +1000,79 @@ function resample(pts: number[][], step: number): number[][] {
     for (let j = 1; j <= k; j++) out.push([a[0] + ((b[0] - a[0]) * j) / k, a[1] + ((b[1] - a[1]) * j) / k]);
   }
   return out;
+}
+
+/**
+ * Zarovná terén pod silnicemi (náspy a zářezy), aby silnice neplavaly nad svahem ani se nenořily.
+ * Okrajové vrcholy dlaždice se nemění, aby sousední dlaždice navazovaly.
+ */
+function flattenRoads(vt: VectorTile, grid: HeightGrid) {
+  const layer = vt.layers.transportation;
+  if (!layer) return;
+  const { n, size, h } = grid;
+  const w = n + 1;
+  const e = size / n;
+  const orig = h.slice();
+  const og: HeightGrid = { n, size, h: orig };
+  const at = (x: number, z: number) => gridHeight(og, Math.min(size, Math.max(0, x)), Math.min(size, Math.max(0, z)));
+  const weight = new Float32Array(w * w);
+  const target = new Float32Array(w * w);
+  const s = size / EXTENT;
+  for (let fi = 0; fi < layer.length; fi++) {
+    const f = layer.feature(fi);
+    if (f.type !== 2) continue;
+    const cls = String(f.properties.class);
+    if (!DRIVABLE.has(cls) || f.properties.brunnel) continue;
+    const hw = (ROAD_WIDTH[cls] ?? 5) / 2;
+    const inner = hw + e * 0.5;
+    const outer = hw + e + 2.5;
+    for (const line of f.loadGeometry()) {
+      const pts = resample(line.map((q) => [q.x * s, q.y * s]), 4);
+      if (pts.length < 2) continue;
+      // Výškový profil osy, vyhlazený klouzavým průměrem.
+      const raw = pts.map((q) => at(q[0], q[1]));
+      const prof = raw.map((_, i) => {
+        let acc = 0;
+        let c = 0;
+        for (let k = Math.max(0, i - 3); k <= Math.min(raw.length - 1, i + 3); k++) {
+          acc += raw[k];
+          c++;
+        }
+        return acc / c;
+      });
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const [ax, az] = pts[i];
+        const [bx, bz] = pts[i + 1];
+        if (Math.max(ax, bx) < -outer || Math.max(az, bz) < -outer || Math.min(ax, bx) > size + outer || Math.min(az, bz) > size + outer) continue;
+        const dx = bx - ax, dz = bz - az;
+        const l2 = dx * dx + dz * dz || 1;
+        const i0 = Math.max(1, Math.floor((Math.min(ax, bx) - outer) / e));
+        const i1 = Math.min(n - 1, Math.ceil((Math.max(ax, bx) + outer) / e));
+        const j0 = Math.max(1, Math.floor((Math.min(az, bz) - outer) / e));
+        const j1 = Math.min(n - 1, Math.ceil((Math.max(az, bz) + outer) / e));
+        for (let j = j0; j <= j1; j++) {
+          for (let ii = i0; ii <= i1; ii++) {
+            const x = ii * e, z = j * e;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+            const d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+            if (d >= outer) continue;
+            const wt = d <= inner ? 1 : 1 - (d - inner) / (outer - inner);
+            const k = j * w + ii;
+            if (wt > weight[k]) {
+              weight[k] = wt;
+              target[k] = prof[i] + (prof[i + 1] - prof[i]) * t;
+            }
+          }
+        }
+      }
+    }
+  }
+  for (let k = 0; k < h.length; k++) {
+    if (weight[k] > 0) {
+      const sm = weight[k] * weight[k] * (3 - 2 * weight[k]);
+      h[k] = orig[k] + (target[k] - orig[k]) * sm;
+    }
+  }
 }
 
 function buildRoads(vt: VectorTile, r: RoadCtx) {
@@ -967,8 +1097,11 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
       let hB = 0;
       let fullLen = 0;
       if (bridge) {
-        hA = r.globalHeight(full[0].x * s, full[0].y * s);
-        hB = r.globalHeight(full[full.length - 1].x * s, full[full.length - 1].y * s);
+        // Konce mostu: první/poslední bod linie, kde známe výšku terénu.
+        hA = NaN;
+        hB = NaN;
+        for (let i = 0; i < full.length && Number.isNaN(hA); i++) hA = r.heightSafe(full[i].x * s, full[i].y * s);
+        for (let i = full.length - 1; i >= 0 && Number.isNaN(hB); i--) hB = r.heightSafe(full[i].x * s, full[i].y * s);
         for (let i = 1; i < full.length; i++) fullLen += Math.hypot(full[i].x - full[i - 1].x, full[i].y - full[i - 1].y) * s;
       }
       for (const part of clipLine(full, EXTENT)) {
@@ -995,8 +1128,11 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
               acc += l;
             }
             const t = along / fullLen;
+            const ground = r.height(q[0], q[1]);
+            if (Number.isNaN(hA) || Number.isNaN(hB)) return ground + 0.3;
             const deck = hA + (hB - hA) * t;
-            return Math.max(deck, r.height(q[0], q[1]) + 0.3);
+            // Pojistka proti nesmyslným datům: mostovka nad terénem, ale ne do nebe.
+            return Math.min(Math.max(deck, ground), ground + 60);
           });
         }
         const prio = ROAD_PRIO[cls] ?? 1;
@@ -1005,7 +1141,7 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
             ribbon(r.rails, pts, 3.0, 0.12, heights, r, false);
           } else {
             const m = cls === 'path' ? r.paths : MARKED.has(cls) ? r.marked : r.plain;
-            ribbon(m, pts, width, 0.2 + prio * 0.025 + (bridge ? 0.1 : 0), heights, r, bridge);
+            ribbon(m, pts, width, 0.22 + prio * 0.025, heights, r, bridge, !bridge);
           }
           if (bridge && heights && !isRail) {
             for (let i = 0; i + 1 < pts.length; i++) {
@@ -1217,8 +1353,8 @@ function buildColliders(edges: Float32Array, circles: Float32Array, sizeM: numbe
     const j1 = Math.min(cells - 1, Math.floor(Math.max(z0, z1) / cs));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) lists[j * cells + i].push(item);
   };
-  for (let e = 0; e < edges.length / 4; e++) {
-    add(edges[e * 4], edges[e * 4 + 1], edges[e * 4 + 2], edges[e * 4 + 3], e);
+  for (let e = 0; e < edges.length / 5; e++) {
+    add(edges[e * 5], edges[e * 5 + 1], edges[e * 5 + 2], edges[e * 5 + 3], e);
   }
   for (let c = 0; c < circles.length / 3; c++) {
     const x = circles[c * 3], z = circles[c * 3 + 1], r = circles[c * 3 + 2];
@@ -1300,13 +1436,14 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const { z, x, y } = req;
   const sizeM = TILE_M * 2 ** (14 - z);
   const near = req.kind === 'near';
-  const N = near ? 128 : 64;
+  const N = near ? req.n : 64;
   const ez = near ? 13 : z - 1;
   const scale = 2 ** (ez - z) * 256;
   const sampler = new ElevSampler(ez);
   const margin = 0.15;
   const vtPromise = loadVector(req.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)));
-  const CN = 2 * N + 1;
+  const CN = 257;
+  const step = 256 / N;
   const cz = near && inCzBox(z, x, y);
   const dmrP = cz ? loadCuzk('dmr5g', z, x, y, CN) : Promise.resolve(null);
   const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
@@ -1315,7 +1452,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const h = new Float32Array((N + 1) * (N + 1));
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
-      const v = dmr ? dmr[2 * j * CN + 2 * i] : NaN;
+      const v = dmr ? dmr[j * step * CN + i * step] : NaN;
       h[j * (N + 1) + i] = Number.isFinite(v) ? v : sampler.sample((x + i / N) * scale, (y + j / N) * scale);
     }
   }
@@ -1332,6 +1469,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     return Number.isNaN(v) ? globalHeight(lx, lz) : v;
   };
   const vt = await vtPromise;
+  if (near && vt) flattenRoads(vt, grid);
   const seed = hashStr(`${z}/${x}/${y}`);
   const canvas = paintGround(vt, req.texSize, sizeM, seed, near);
   const texture = canvas.transferToImageBitmap();
@@ -1351,7 +1489,12 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     };
     buildBuildings(vt, bctx);
     const rctx: RoadCtx = {
-      s, height, globalHeight, marked: new MeshBuf(), plain: new MeshBuf(), paths: new MeshBuf(), sides: new MeshBuf(),
+      s, height, globalHeight, size: sizeM,
+      heightSafe: (lx: number, lz: number) => {
+        const v = gridHeight(grid, lx, lz);
+        return Number.isNaN(v) ? sampler.sampleSafe((x + lx / sizeM) * scale, (y + lz / sizeM) * scale) : v;
+      },
+      marked: new MeshBuf(), plain: new MeshBuf(), paths: new MeshBuf(), sides: new MeshBuf(),
       rails: new MeshBuf(), bridges: new FloatBuf(256), lines: [],
     };
     buildRoads(vt, rctx);

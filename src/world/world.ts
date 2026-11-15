@@ -63,6 +63,33 @@ export const envUniforms = {
   uOrigin: { value: new THREE.Vector2(0, 0) },
 };
 
+/** Maska načtených blízkých dlaždic: vzdálený terén se pod nimi nevykresluje. */
+const MASK = 32;
+const maskData = new Uint8Array(MASK * MASK);
+const maskTex = new THREE.DataTexture(maskData, MASK, MASK, THREE.RedFormat, THREE.UnsignedByteType);
+maskTex.magFilter = maskTex.minFilter = THREE.NearestFilter;
+const maskUniforms = {
+  uNearMask: { value: maskTex },
+  uMaskOrigin: { value: new THREE.Vector2() },
+  uMaskCell: { value: TILE_M },
+};
+
+function addFarMask(mat: THREE.MeshStandardMaterial) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev(sh, r);
+    Object.assign(sh.uniforms, maskUniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vSXZ;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vSXZ;\nuniform sampler2D uNearMask;\nuniform vec2 uMaskOrigin;\nuniform float uMaskCell;')
+      .replace('void main() {', `void main() {
+  vec2 mc = (vSXZ - uMaskOrigin) / uMaskCell;
+  if (mc.x >= 0.0 && mc.y >= 0.0 && mc.x < ${MASK}.0 && mc.y < ${MASK}.0 && texture2D(uNearMask, (floor(mc) + 0.5) / ${MASK}.0).r > 0.5) discard;`);
+  };
+}
+
 function addSnow(mat: THREE.MeshStandardMaterial, vegetation: boolean, key: string) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uSnowLine = envUniforms.uSnowLine;
@@ -377,6 +404,18 @@ export class World {
     this.sortQueue();
     this.stats.pending = this.pending.size;
     this.pump();
+    this.updateMask(tx, ty);
+  }
+
+  private updateMask(tx: number, ty: number) {
+    const mx0 = tx - MASK / 2, my0 = ty - MASK / 2;
+    maskData.fill(0);
+    for (const t of this.near.values()) {
+      const i = t.x - mx0, j = t.y - my0;
+      if (i >= 0 && j >= 0 && i < MASK && j < MASK) maskData[j * MASK + i] = 255;
+    }
+    maskTex.needsUpdate = true;
+    maskUniforms.uMaskOrigin.value.set(mx0 * TILE_M - this.origin.x, my0 * TILE_M - this.origin.z);
   }
 
   private sortQueue() {
@@ -396,6 +435,7 @@ export class World {
       id, kind, z, x, y, tileUrl: this.tileUrl,
       texSize: kind === 'near' ? this.quality.texSize : 512,
       treeBudget: kind === 'near' ? this.quality.trees : 0,
+      n: this.quality.texSize >= 1024 ? 256 : 128,
     };
     // Vzdálené dlaždice z12 berou vektorová data ze z12.
     this.pending.set(tileKey(z, x, y), id);
@@ -449,6 +489,7 @@ export class World {
     }
     const m = new THREE.MeshStandardMaterial({ map, roughness: 0.97, metalness: 0, flatShading: true });
     addSnow(m, true, far ? 'far' : 'terrain');
+    if (far) addFarMask(m);
     void key;
     return m;
   }
@@ -484,7 +525,7 @@ export class World {
     add(d.roadsPlain, this.mats.plain, false, true, 'roads');
     add(d.paths, this.mats.path, false, true, 'paths');
     add(d.rails, this.mats.rail, false, true, 'rails');
-    add(d.bridgeSides, this.mats.bridge, true, true, 'bridges');
+    add(d.bridgeSides, this.mats.bridge, false, true, 'bridges');
     if (d.trees && d.trees.length) {
       const t = d.trees;
       const count = t.length / 5;
@@ -681,7 +722,7 @@ export class World {
           let rr = r;
           if (it >= 0) {
             const e = c.edges;
-            const ax = e[it * 4], az = e[it * 4 + 1], bx = e[it * 4 + 2], bz = e[it * 4 + 3];
+            const ax = e[it * 5], az = e[it * 5 + 1], bx = e[it * 5 + 2], bz = e[it * 5 + 3];
             const dx = bx - ax, dz = bz - az;
             const l2 = dx * dx + dz * dz || 1;
             const s = Math.max(0, Math.min(1, ((lx - ax) * dx + (lz - az) * dz) / l2));
@@ -720,7 +761,7 @@ export class World {
   }
 
   /** První průsečík úsečky se zdí budovy (0..1), nebo 1, když je volno. */
-  segmentHit(ax: number, az: number, bx: number, bz: number): number {
+  segmentHit(ax: number, az: number, bx: number, bz: number, ay = -1e9, by = -1e9): number {
     const t = this.tileAt(ax, az);
     if (!t?.colliders) return 1;
     const c = t.colliders;
@@ -737,13 +778,14 @@ export class World {
           const it = c.cellItems[k];
           if (it < 0) continue;
           const e = c.edges;
-          const ex = e[it * 4 + 2] - e[it * 4], ez = e[it * 4 + 3] - e[it * 4 + 1];
+          const ex = e[it * 5 + 2] - e[it * 5], ez = e[it * 5 + 3] - e[it * 5 + 1];
           const den = dx * ez - dz * ex;
           if (Math.abs(den) < 1e-9) continue;
-          const wx = e[it * 4] - x0, wz = e[it * 4 + 1] - z0;
+          const wx = e[it * 5] - x0, wz = e[it * 5 + 1] - z0;
           const ta = (wx * ez - wz * ex) / den;
           const tb = (wx * dz - wz * dx) / den;
-          if (ta >= 0 && ta < best && tb >= 0 && tb <= 1) best = ta;
+          // Přes budovu lze vidět, pokud paprsek v tom místě vede nad její střechou.
+          if (ta >= 0 && ta < best && tb >= 0 && tb <= 1 && ay + (by - ay) * ta < e[it * 5 + 4] + 4) best = ta;
         }
       }
     }

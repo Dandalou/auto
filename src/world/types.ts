@@ -12,6 +12,8 @@ export interface TileRequest {
   tileUrl: string;
   texSize: number;
   treeBudget: number;
+  /** Počet segmentů výškové mřížky blízké dlaždice (128 nebo 256). */
+  n: number;
 }
 
 export interface MeshArrays {
@@ -32,7 +34,7 @@ export interface RoadLine {
 }
 
 export interface Colliders {
-  /** Hrany budov: x1, z1, x2, z2. */
+  /** Hrany budov: x1, z1, x2, z2, výška vrcholu (m n. m.). */
   edges: Float32Array;
   /** Kruhy (stromy): x, z, r. */
   circles: Float32Array;

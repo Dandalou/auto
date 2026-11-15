@@ -377,6 +377,7 @@ export class Game {
 
   private navMeshDirty = false;
   private urbanT = 0;
+  private speedT = 0;
   private urban = false;
 
   /** Rychlostní limit: v obci max. 50 km/h (kromě dálnic a rychlostních silnic). */
@@ -496,6 +497,17 @@ export class Game {
       }
     }
     if (!this.job) v.impacts.length = 0;
+    // Přestupky při práci: delší jízda o víc než 10 km/h nad limit.
+    const lim = this.speedLimit(v.onRoad);
+    if (this.job && lim && Math.abs(v.vF) * 3.6 > lim + 10) {
+      this.speedT += dt;
+      if (this.speedT > 3) {
+        this.speedT = -10;
+        this.job.speeding++;
+        this.notify(`Překročení rychlosti (${lim} km/h) – sníží to hodnocení`, 'warn');
+      }
+    } else if (this.speedT > 0) this.speedT = 0;
+    else this.speedT = Math.min(0, this.speedT + dt);
     const m = this.model;
     this.world.toScene(v.x, v.z, m.root.position, v.y);
     m.root.rotation.order = 'YXZ';
@@ -588,18 +600,31 @@ export class Game {
     const gx = desired.x + this.world.origin.x, gz = desired.z + this.world.origin.z;
     const gh = this.world.terrainHeight(gx, gz);
     if (!Number.isNaN(gh)) desired.y = Math.max(desired.y, gh + 1.2);
-    // Kamera nesmí skončit ve zdi: když mezi vozidlem a kamerou stojí budova, přiblížit se.
+    // Kamera nesmí skončit ve zdi: když mezi vozidlem a kamerou stojí budova,
+    // nejdřív ji zvednout výš (strmější pohled), a teprve pak přiblížit.
     {
       const o = this.world.origin;
-      const th = this.world.terrainHeight(desired.x + o.x, desired.z + o.z);
-      if (Number.isNaN(th) || desired.y < th + 22) {
-        const hit = this.world.segmentHit(target.x + o.x, target.z + o.z, desired.x + o.x, desired.z + o.z);
-        if (hit < 1) {
-          const t = Math.max(0.05, hit - 0.6 / Math.max(1, target.distanceTo(desired)));
-          desired.x = target.x + (desired.x - target.x) * t;
-          desired.z = target.z + (desired.z - target.z) * t;
-          desired.y = Math.max(desired.y, target.y + 2.5);
+      const eyeY = target.y + 1.5;
+      const blocked = (d: THREE.Vector3) => this.world.segmentHit(target.x + o.x, target.z + o.z, d.x + o.x, d.z + o.z, eyeY, d.y);
+      let hit = blocked(desired);
+      if (hit < 1) {
+        const horiz = Math.hypot(desired.x - target.x, desired.z - target.z);
+        const total = Math.hypot(horiz, desired.y - target.y);
+        let p = Math.atan2(desired.y - target.y, horiz);
+        while (hit < 1 && p < 1.35) {
+          p += 0.12;
+          const k = (total * Math.cos(p)) / (horiz || 1);
+          const cand = new THREE.Vector3(target.x + (desired.x - target.x) * k, target.y + total * Math.sin(p), target.z + (desired.z - target.z) * k);
+          hit = blocked(cand);
+          if (hit >= 1) desired.copy(cand);
         }
+      }
+      if (hit < 1) {
+        const t = Math.max(0.15, hit - 0.6 / Math.max(1, target.distanceTo(desired)));
+        desired.x = target.x + (desired.x - target.x) * t;
+        desired.y = target.y + (desired.y - target.y) * t;
+        desired.z = target.z + (desired.z - target.z) * t;
+        desired.y = Math.max(desired.y, target.y + 3);
       }
     }
     if (!this.camInit) {
@@ -689,7 +714,7 @@ export class Game {
     }
     if (!pts || pts.length < 2) return;
     const pos: number[] = [];
-    const w = 1.1;
+    const w = 0.8;
     // Jen prvních ~1,5 km, aby se mesh nestavěl zbytečně velký.
     let acc = 0;
     for (let i = 0; i + 1 < pts.length && acc < 1500; i++) {
@@ -704,8 +729,8 @@ export class Game {
         const t0 = k / n, t1 = (k + 1) / n;
         const p0x = ax + (bx - ax) * t0, p0z = az + (bz - az) * t0;
         const p1x = ax + (bx - ax) * t1, p1z = az + (bz - az) * t1;
-        const h0 = this.world.groundHeight(p0x, p0z, 9999) + 0.45;
-        const h1 = this.world.groundHeight(p1x, p1z, 9999) + 0.45;
+        const h0 = this.world.groundHeight(p0x, p0z, this.vehicle.y + 1) + 0.32;
+        const h1 = this.world.groundHeight(p1x, p1z, this.vehicle.y + 1) + 0.32;
         if (Number.isNaN(h0 + h1)) continue;
         const o = this.world.origin;
         const q = [

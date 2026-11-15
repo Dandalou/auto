@@ -39,6 +39,8 @@ export abstract class Job {
   abstract vehicle: VehicleType[];
   done = false;
   failed = false;
+  /** Počet přestupků (překročení rychlosti). */
+  speeding = 0;
   result: JobResult | null = null;
   abstract target(): Waypoint | null;
   abstract update(dt: number, ctx: JobCtx): void;
@@ -321,7 +323,7 @@ export class BusJob extends Job {
     const n = this.line.stops.length;
     const late = this.delays.filter((d) => d > 120).length;
     const punct = Math.max(0, 1 - late / n - this.penalties * 0.1);
-    const comfort = Math.max(0, 1 - this.comfortEvents * 0.06 - this.crashes * 0.15);
+    const comfort = Math.max(0, 1 - this.comfortEvents * 0.06 - this.crashes * 0.15 - this.speeding * 0.08);
     const score = 0.5 * punct + 0.5 * comfort;
     const km = this.line.legLen.reduce((a, b) => a + b, 0) / 1000;
     const pay = Math.round((n * 260 + km * 160 + this.carried * 20) * (0.4 + score * 0.9));
@@ -333,7 +335,7 @@ export class BusJob extends Job {
       summary: [
         `Zastávek: ${n}, ujeto ${km.toFixed(1)} km, svezeno ${this.carried} cestujících`,
         `Přesnost: ${Math.round(punct * 100)} % (zpoždění nad 2 min: ${late}×)`,
-        `Plynulost: ${Math.round(comfort * 100)} % (prudké manévry ${this.comfortEvents}×, nárazy ${this.crashes}×)`,
+        `Plynulost a předpisy: ${Math.round(comfort * 100)} % (prudké manévry ${this.comfortEvents}×, nárazy ${this.crashes}×, rychlost ${this.speeding}×)`,
         `Hodnocení: ${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`,
       ],
       stats: { busStops: n, passengers: this.carried },
@@ -438,7 +440,7 @@ export class TaxiJob extends Job {
           const time = ctx.clock - this.startRide;
           const km = this.rideLen / 1000;
           const fare = Math.round(90 + km * 45 + time / 60 * 8);
-          const tip = Math.max(0, Math.round(fare * (0.15 - this.comfortEvents * 0.05 + (time < this.eta ? 0.1 : -0.05))));
+          const tip = Math.max(0, Math.round(fare * (0.15 - this.comfortEvents * 0.05 - this.speeding * 0.05 + (time < this.eta ? 0.1 : -0.05))));
           this.result = {
             pay: fare + tip, xp: Math.round(20 + km * 8),
             summary: [
