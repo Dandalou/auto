@@ -139,9 +139,10 @@ export class Game {
     if (this.world.quality !== q) this.world.setQuality(q);
     this.env.setShadows(q.shadows);
     this.env.season = s.season;
-    this.env.weather = s.weather;
+    if (s.weather !== 'skutečné') this.env.weather = s.weather;
+    else this.weatherT = 0;
     this.env.time = s.time;
-    this.env.timeSpeed = s.timeSpeed;
+    this.env.timeSpeed = Math.max(0, s.timeSpeed);
     this.audio.enabled = s.sound;
     this.traffic.max = q.radius >= 2 ? 28 : 14;
     if (this.pedestrians) this.pedestrians.max = q.radius >= 2 ? 30 : 15;
@@ -169,6 +170,7 @@ export class Game {
     this.walker.x = x;
     this.walker.z = z;
     this.pendingSnap = snap;
+    this.weatherT = 3;
     this.traffic.clear();
     this.pedestrians.clear();
     this.world.rebase(x, z);
@@ -364,6 +366,7 @@ export class Game {
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.setSeason(this.env.season);
     this.adaptPerformance(dt);
+    this.updateRealWorld(dt);
     this.hudT -= dt;
     if (this.hudT <= 0) {
       this.hudT = 0.1;
@@ -377,6 +380,8 @@ export class Game {
 
   private navMeshDirty = false;
   private urbanT = 0;
+  weatherT = 0;
+  realWeather = '';
   private speedT = 0;
   private urban = false;
 
@@ -387,6 +392,33 @@ export class Game {
     if (!lim) return null;
     if (this.urban && cls !== 'motorway' && cls !== 'trunk') return Math.min(lim, 50);
     return lim;
+  }
+
+  /** Skutečný čas a počasí (Open-Meteo) podle nastavení. */
+  private updateRealWorld(dt: number) {
+    const s = this.state.settings;
+    if (s.timeSpeed < 0) {
+      const d = new Date();
+      this.env.time = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+      const m = d.getMonth();
+      this.env.season = m <= 1 || m === 11 ? 'zima' : m <= 4 ? 'jaro' : m <= 7 ? 'léto' : 'podzim';
+    }
+    if (s.weather !== 'skutečné' || !this.ready) return;
+    this.weatherT -= dt;
+    if (this.weatherT > 0) return;
+    this.weatherT = 600;
+    const { lon, lat } = worldToLonLat(this.px, this.pz);
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&current=weather_code,temperature_2m`)
+      .then((r) => r.json())
+      .then((j: { current?: { weather_code: number; temperature_2m: number } }) => {
+        const c = j.current?.weather_code;
+        if (c === undefined) return;
+        this.env.weather = c <= 1 ? 'jasno' : c <= 3 ? 'oblačno' : c <= 48 ? 'mlha' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'sníh' : 'déšť';
+        this.realWeather = `${Math.round(j.current!.temperature_2m)} °C`;
+      })
+      .catch(() => {
+        this.weatherT = 120;
+      });
   }
 
   /** Dynamické rozlišení: při nízkém FPS sníží vykreslovací rozlišení, při rezervě ho vrátí. */
@@ -852,7 +884,7 @@ export class Game {
     const hh = Math.floor(this.env.time);
     const mm = Math.floor((this.env.time - hh) * 60);
     $('clock').textContent = `${hh}:${String(mm).padStart(2, '0')}`;
-    $('weather-label').textContent = `${this.env.weather}, ${this.env.season}`;
+    $('weather-label').textContent = `${this.env.weather}${this.realWeather && this.state.settings.weather === 'skutečné' ? ` ${this.realWeather}` : ''}, ${this.env.season}`;
     const lv = level(s.xp);
     $('lvl').textContent = String(lv);
     const lo = (lv - 1) ** 2 * 100, hi = lv ** 2 * 100;
@@ -871,7 +903,7 @@ export class Game {
       this.urbanT -= 0.1;
       if (this.urbanT <= 0) {
         this.urbanT = 1.5;
-        this.urban = this.world.buildingVolume(v.x, v.z, 120) > 60000;
+        this.urban = this.world.buildingVolume(v.x, v.z, 220) > 50000;
       }
       const lim = this.speedLimit(v.onRoad);
       const el = $('limit');

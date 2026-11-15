@@ -639,9 +639,9 @@ function settingsPanel(g: Game) {
     <div class="keys">
       <label>Kvalita grafiky</label><select id="s-q">${opt(Object.keys(QUALITY), s.quality)}</select>
       <label>Roční období</label><select id="s-season">${opt(['jaro', 'léto', 'podzim', 'zima'], g.env.season)}</select>
-      <label>Počasí</label><select id="s-weather">${opt(['jasno', 'oblačno', 'mlha', 'déšť', 'sníh'], g.env.weather)}</select>
+      <label>Počasí</label><select id="s-weather">${opt(['skutečné', 'jasno', 'oblačno', 'mlha', 'déšť', 'sníh'], s.weather === 'skutečné' ? 'skutečné' : g.env.weather)}</select>
       <label>Denní doba <span id="s-tl">${g.env.time.toFixed(1)} h</span></label><input type="range" id="s-time" min="0" max="23.9" step="0.1" value="${g.env.time}">
-      <label>Plynutí času</label><select id="s-speed">${[0, 1, 10, 60].map((v) => `<option value="${v}" ${v === g.env.timeSpeed ? 'selected' : ''}>${v === 0 ? 'zastaveno' : v === 1 ? '1 min / s' : `${v} min / s`}</option>`).join('')}</select>
+      <label>Plynutí času</label><select id="s-speed">${[-1, 0, 1, 10, 60].map((v) => `<option value="${v}" ${v === s.timeSpeed ? 'selected' : ''}>${v < 0 ? 'skutečný čas a roční období' : v === 0 ? 'zastaveno' : v === 1 ? '1 min / s' : `${v} min / s`}</option>`).join('')}</select>
       <label>Zvuk</label><select id="s-sound">${opt(['zapnutý', 'vypnutý'], s.sound ? 'zapnutý' : 'vypnutý')}</select>
       <label>Doprava</label><select id="s-traffic">${opt(['zapnutá', 'vypnutá'], g.traffic.enabled ? 'zapnutá' : 'vypnutá')}</select>
     </div>
@@ -659,12 +659,19 @@ function settingsPanel(g: Game) {
     g.applySettings();
   };
   sel('s-season').onchange = () => (g.env.season = s.season = sel('s-season').value as Season);
-  sel('s-weather').onchange = () => (g.env.weather = s.weather = sel('s-weather').value as Weather);
+  sel('s-weather').onchange = () => {
+    s.weather = sel('s-weather').value as Weather | 'skutečné';
+    if (s.weather === 'skutečné') g.weatherT = 0;
+    else g.env.weather = s.weather;
+  };
   ($('s-time') as HTMLInputElement).oninput = () => {
     g.env.time = s.time = Number(($('s-time') as HTMLInputElement).value);
     $('s-tl').textContent = `${g.env.time.toFixed(1)} h`;
   };
-  sel('s-speed').onchange = () => (g.env.timeSpeed = s.timeSpeed = Number(sel('s-speed').value));
+  sel('s-speed').onchange = () => {
+    s.timeSpeed = Number(sel('s-speed').value);
+    g.env.timeSpeed = Math.max(0, s.timeSpeed);
+  };
   sel('s-sound').onchange = () => (g.audio.enabled = s.sound = sel('s-sound').value === 'zapnutý');
   sel('s-traffic').onchange = () => (g.traffic.enabled = sel('s-traffic').value === 'zapnutá');
   on('#s-export', () => {

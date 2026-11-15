@@ -87,8 +87,10 @@ export interface Company {
 export interface Settings {
   quality: string;
   season: Season;
-  weather: Weather;
+  /** Počasí, nebo 'skutečné' podle Open-Meteo. */
+  weather: Weather | 'skutečné';
   time: number;
+  /** Herní minuty za sekundu; -1 = skutečný čas. */
   timeSpeed: number;
   sound: boolean;
   camera: number;
@@ -134,7 +136,7 @@ export function defaultState(x: number, z: number): SaveState {
     stats: { distance: 0, jobs: 0, busStops: 0, passengers: 0, taxiRides: 0, deliveries: 0, crashes: 0, earned: 0 },
     visited: {},
     company: null,
-    settings: { quality: 'střední', season: 'léto', weather: 'jasno', time: 10.5, timeSpeed: 1, sound: true, camera: 0 },
+    settings: { quality: 'střední', season: 'léto', weather: 'skutečné', time: 10.5, timeSpeed: -1, sound: true, camera: 0 },
     tutorialDone: false,
   };
 }

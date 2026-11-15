@@ -536,6 +536,39 @@ interface BuildCtx {
   roofs: MeshBuf;
   edges: FloatBuf;
   bpts: FloatBuf;
+  /** Výška povrchu nad terénem (DMP − DMR) z ČÚZK, mřížka cn × cn, nebo null. */
+  canopy: Float32Array | null;
+  cn: number;
+  size: number;
+}
+
+/** Skutečná výška budovy z ČÚZK: horní kvantil výšky povrchu nad terénem uvnitř půdorysu. */
+function measuredHeight(b: BuildCtx, ring: number[][]): number {
+  if (!b.canopy) return NaN;
+  const step = b.size / (b.cn - 1);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [x, z] of ring) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+  }
+  const vals: number[] = [];
+  const inside = (x: number, z: number) => {
+    let c = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, zi] = ring[i], [xj, zj] = ring[j];
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  for (let j = Math.max(0, Math.ceil(z0 / step)); j <= Math.min(b.cn - 1, Math.floor(z1 / step)); j++) {
+    for (let i = Math.max(0, Math.ceil(x0 / step)); i <= Math.min(b.cn - 1, Math.floor(x1 / step)); i++) {
+      if (!inside(i * step, j * step)) continue;
+      const v = b.canopy[j * b.cn + i];
+      if (Number.isFinite(v)) vals.push(v);
+    }
+  }
+  if (vals.length < 2) return NaN;
+  vals.sort((a, c) => a - c);
+  return vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.8))];
 }
 
 function addWall(
@@ -808,38 +841,47 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         top = Math.max(top, h);
       }
       if (!Number.isFinite(base)) continue;
-      // Nízké přístavky a garáže s nulovou výškou nejsou vysoké 3 m+.
+      const ringM = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
+      // Výška: změřená z ČÚZK (pokud je k dispozici a dává smysl), jinak z OSM.
+      let ph = hgt;
+      const meas = minH < 2.5 ? measuredHeight(b, ringM) : NaN;
+      const measured = Number.isFinite(meas) && meas >= 2.2 && meas < 250;
+      if (measured) ph = meas;
+      // Rozhodnutí o šikmé střeše předem, aby šlo odečíst výšku střechy od zdí.
+      let bbP: ReturnType<typeof obb> = null;
+      if (poly.holes.length === 0 && minH < 2.5 && ph <= 26 && areaM > 12 && areaM < 3500) {
+        const bb = obb(ringM);
+        if (bb && areaM / bb.area > 0.78) {
+          const flatChance = ph > 30 ? 0.9 : ph > 15 ? 0.45 : areaM > 1200 ? 0.6 : areaM > 500 ? 0.3 : custom ? 0.25 : 0.06;
+          if ((seed % 1000) / 1000 >= flatChance) bbP = bb;
+        }
+      }
       const small = areaM < 30;
-      const wallH = small ? Math.min(hgt, 2.6) : hgt;
+      let wallH = small && !measured ? Math.min(ph, 2.6) : ph;
+      if (bbP && measured) wallH = Math.max(2.4, ph - Math.min(7.5, bbP.hs * 0.8));
+      const hgtEff = ph;
       const y0 = minH > 0 ? top + minH : base - 0.5;
       const y1 = top + wallH;
-      b.bpts.push(cx * s, cy * s, areaM * hgt);
+      b.bpts.push(cx * s, cy * s, areaM * hgtEff);
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
           u = addWall(b, ax, az, bx, bz, y0, y1, u, col);
-          if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (hgt <= 24 ? 4 : 0));
+          if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
         }
       }
       // Střecha: šikmá nad téměř obdélníkovým půdorysem, jinak plochá.
       let pitched = false;
-      if (poly.holes.length === 0 && minH < 2.5 && hgt <= 24 && areaM > 12 && areaM < 3500) {
-        const pts = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
-        const bb = obb(pts);
-        if (bb && areaM / bb.area > 0.78) {
-          const flatChance = hgt > 30 ? 0.9 : hgt > 15 ? 0.45 : areaM > 1200 ? 0.6 : areaM > 500 ? 0.3 : custom ? 0.25 : 0.06;
-          if ((seed % 1000) / 1000 >= flatChance) {
-            const rc = ROOFS[(seed >>> 4) % ROOFS.length];
-            pitchedRoof(b, bb, y1, seed, col, rc);
-            pitched = true;
-          }
-        }
+      if (bbP) {
+        pitchedRoof(b, bbP, y1, seed, col, ROOFS[(seed >>> 4) % ROOFS.length]);
+        pitched = true;
       }
-      if (!pitched && minH < 2.5 && areaM > 80 && hgt <= 60 && hgt >= 7 && (seed % 100) < (hgt > 35 ? 35 : 92)) {
+      const hgt2 = hgtEff;
+      if (!pitched && minH < 2.5 && areaM > 80 && hgt2 <= 60 && hgt2 >= 7 && (seed % 100) < (hgt2 > 35 ? 35 : 92)) {
         const rings = [o, ...poly.holes].map((r) => r.slice(0, -1).map((q) => [q.x * s, q.y * s]));
         const rc = ROOFS[(seed >>> 4) % ROOFS.length];
-        pitched = mansardRoof(b, rings, y1, Math.min(4, 1.8 + hgt * 0.08), rc, rc.map((v) => v * 0.8));
+        pitched = mansardRoof(b, rings, y1, Math.min(4, 1.8 + hgt2 * 0.08), rc, rc.map((v) => v * 0.8));
       }
       if (!pitched) {
         const flat: number[] = [];
@@ -1486,6 +1528,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     const s = sizeM / EXTENT;
     const bctx: BuildCtx = {
       s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024),
+      canopy, cn: CN, size: sizeM,
     };
     buildBuildings(vt, bctx);
     const rctx: RoadCtx = {

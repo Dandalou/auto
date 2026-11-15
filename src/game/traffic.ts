@@ -182,7 +182,7 @@ export class Traffic {
           this.remove(c);
           continue;
         }
-        if (e.urban === undefined) e.urban = this.world.buildingVolume((e.a.x + e.b.x) / 2, (e.a.z + e.b.z) / 2, 100) > 40000;
+        if (e.urban === undefined) e.urban = this.world.buildingVolume((e.a.x + e.b.x) / 2, (e.a.z + e.b.z) / 2, 220) > 50000;
         const lim = e.urban && e.cls !== 'motorway' && e.cls !== 'trunk' ? Math.min(50, SPEED_LIMIT[e.cls] ?? 50) : SPEED_LIMIT[e.cls] ?? 50;
         const limit = Math.min(lim / 3.6, c.spec.vmax * 0.9);
         const remain = e.len - c.s;
