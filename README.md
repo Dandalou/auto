@@ -8,6 +8,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 
 ## Co hra umí
 
+- **Skutečné výšky budov** změřené z ČÚZK (DMP 1G − DMR 5G pod půdorysem), **skutečné počasí** (Open-Meteo) a čas.
 - **Přesný terén a vegetace z ČÚZK:** výškopis DMR 5G a stromy tam, kde skutečně rostou. Výška stromu se počítá z výšky porostu (DMP 1G − DMR 5G). Mimo republiku se použije Terrarium a lesy z OSM.
 - **Celá republika 1:1.** Dlaždice (~1,6 × 1,6 km) se načítají kolem hráče, terén až k horizontu se dotahuje hrubší vrstvou.
 - **Skutečné budovy** s výškou z OSM (`render_height`). Střechy jsou sedlové a valbové nad orientovaným obdélníkem půdorysu, městské bloky dostávají mansardové střechy. K tomu komíny, okna, která v noci svítí, a kolize.
@@ -78,4 +79,5 @@ Při každém pushi do `main` GitHub Actions hru sestaví a nasadí na GitHub Pa
 - Výškopis a vegetace © [ČÚZK](https://geoportal.cuzk.cz) (DMR 5G, DMP 1G, služba ArcGIS ImageServer), licence CC BY 4.0.
 - Výškopis mimo ČR: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
 - Vyhledávání [Nominatim](https://nominatim.org) (jen na vyžádání hráče).
+- Aktuální počasí [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
 - Kód je pod licencí MIT (viz `LICENSE`).
