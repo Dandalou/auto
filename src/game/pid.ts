@@ -55,11 +55,12 @@ export interface PidPlan extends PlannedLine {
 }
 
 /** Úsek skutečné linky PID začínající u zastávky blízko hráče. */
-export function planPidLines(world: World, x: number, z: number, max = 3): PidPlan[] {
+export function planPidLines(world: World, x: number, z: number, max = 3, mode: 'bus' | 'tram' = 'bus'): PidPlan[] {
   if (!data || !stopXZ) return [];
   const cands: { line: PidLine; dir: PidDir; start: number; d: number }[] = [];
   for (const line of data.lines) {
     if (line.night) continue;
+    if ((line.t === 0) !== (mode === 'tram')) continue;
     for (const dir of line.d) {
       let best = -1;
       let bd = 1500;
@@ -92,7 +93,7 @@ export function planPidLines(world: World, x: number, z: number, max = 3): PidPl
       if (!world.isReady(sx, sz)) break;
       if (stops.length) {
         const prev = stops[stops.length - 1];
-        const r = world.graph.route(prev.x, prev.z, sx, sz, 'bus', 20000);
+        const r = world.graph.route(prev.x, prev.z, sx, sz, mode, 20000);
         if (!r) break;
         legs.push(r.pts);
         legLen.push(r.len);
@@ -102,7 +103,7 @@ export function planPidLines(world: World, x: number, z: number, max = 3): PidPl
     }
     if (stops.length < 3) continue;
     used.add(c.line.n);
-    out.push({ stops, legs, legLen, number: c.line.n, headsign: c.dir.h, regional: !!c.line.reg, times });
+    out.push({ stops, legs, legLen, number: c.line.n, headsign: c.dir.h, regional: !!c.line.reg, times, mode });
   }
   return out;
 }

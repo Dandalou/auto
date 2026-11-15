@@ -36,6 +36,7 @@ interface NearTile {
   bridges?: Float32Array;
   stops: NamedPoint[];
   fuel: NamedPoint[];
+  tramStops: NamedPoint[];
   addresses: NamedPoint[];
   places: PlacePoint[];
   streets: StreetLine[];
@@ -628,7 +629,7 @@ export class World {
     this.root.add(group);
     const tile: NearTile = {
       key, x: d.x, y: d.y, ox, oz, group, grid: { n: d.n, size: d.size, h: d.heights },
-      colliders: d.colliders, bridges: d.bridges, stops: d.stops ?? [], fuel: d.fuel ?? [], addresses: d.addresses ?? [],
+      colliders: d.colliders, bridges: d.bridges, stops: d.stops ?? [], fuel: d.fuel ?? [], tramStops: d.tramStops ?? [], addresses: d.addresses ?? [],
       places: d.places ?? [], streets: d.streets ?? [], buildings: d.buildings, texture: d.texture, disposables,
     };
     this.near.set(key, tile);
@@ -837,6 +838,12 @@ export class World {
   }
 
   /** Všechny zastávky v načtených dlaždicích (světové souřadnice). */
+  allTramStops(): NamedPoint[] {
+    const out: NamedPoint[] = [];
+    for (const t of this.near.values()) for (const s of t.tramStops) out.push({ name: s.name, x: s.x + t.ox, z: s.z + t.oz });
+    return out;
+  }
+
   allFuel(): NamedPoint[] {
     const out: NamedPoint[] = [];
     for (const t of this.near.values()) for (const s of t.fuel) out.push({ name: s.name, x: s.x + t.ox, z: s.z + t.oz });

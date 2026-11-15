@@ -1191,7 +1191,8 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
             }
           }
         }
-        if (DRIVABLE.has(cls) || cls === 'path') {
+        const isTram = cls === 'transit' && p.subclass === 'tram';
+        if (DRIVABLE.has(cls) || cls === 'path' || isTram) {
           const arr = new Float32Array(part.length * 3);
           part.forEach((q, i) => {
             const x = q.x * s, z = q.y * s;
@@ -1199,7 +1200,7 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
             arr[i * 3 + 1] = bridge && heights ? NaN : r.height(x, z);
             arr[i * 3 + 2] = z;
           });
-          r.lines.push({ cls: p.ramp ? `${cls}` : cls, oneway, bridge, tunnel, pts: arr });
+          r.lines.push({ cls: isTram ? 'tram' : cls, oneway, bridge, tunnel, pts: arr });
         }
       }
     }
@@ -1420,6 +1421,7 @@ function buildColliders(edges: Float32Array, circles: Float32Array, sizeM: numbe
 function points(vt: VectorTile, s: number) {
   const stops: NamedPoint[] = [];
   const fuel: NamedPoint[] = [];
+  const tram: NamedPoint[] = [];
   const addresses: NamedPoint[] = [];
   const places: PlacePoint[] = [];
   const streets: StreetLine[] = [];
@@ -1429,9 +1431,14 @@ function points(vt: VectorTile, s: number) {
     for (let i = 0; i < poi.length; i++) {
       const f = poi.feature(i);
       const pc = f.properties.class;
-      if (pc !== 'bus' && pc !== 'fuel') continue;
+      const tramStop = pc === 'railway' && f.properties.subclass === 'tram_stop';
+      if (pc !== 'bus' && pc !== 'fuel' && !tramStop) continue;
       const g = f.loadGeometry()[0]?.[0];
       if (!g || !inside(g)) continue;
+      if (tramStop) {
+        tram.push({ name: String(f.properties.name ?? 'Zastávka'), x: g.x * s, z: g.y * s });
+        continue;
+      }
       if (pc === 'fuel') {
         fuel.push({ name: String(f.properties.name ?? 'Čerpací stanice'), x: g.x * s, z: g.y * s });
         continue;
@@ -1475,7 +1482,7 @@ function points(vt: VectorTile, s: number) {
       }
     }
   }
-  return { stops, addresses, places, streets, fuel };
+  return { stops, addresses, places, streets, fuel, tramStops: tram };
 }
 
 // ---------------------------------------------------------------- hlavní

@@ -74,7 +74,8 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
   let sign: VehicleModel['sign'];
   const wr = spec.mass > 5000 ? 0.5 : spec.type === 'dodávka' ? 0.38 : 0.33;
   // Osa Z modelu míří dozadu (-Z = dopředu), aby odpovídala heading = 0 na sever.
-  if (spec.type === 'autobus' || spec.type === 'meziměstský') {
+  if (spec.type === 'autobus' || spec.type === 'meziměstský' || spec.type === 'tramvaj') {
+    const tram = spec.type === 'tramvaj';
     const floor = 0.35;
     body.add(box(W, H - floor - 0.05, L, paint, 0, floor + (H - floor) / 2, 0));
     // Okna po stranách.
@@ -85,7 +86,7 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
     body.add(box(W + 0.03, 0.3, L * 0.98, new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.5 }), 0, floor + 0.55, 0));
     // Dveře na pravé straně.
     const doorMat = new THREE.MeshStandardMaterial({ color: 0x30363d, roughness: 0.3, metalness: 0.3 });
-    const doorZs = spec.type === 'autobus' ? [-L / 2 + 1.2, -0.3, L / 2 - 2.6] : [-L / 2 + 1.2];
+    const doorZs = tram ? [-L / 2 + 2.2, -L / 2 + 9, 1.5, L / 2 - 9, L / 2 - 2.5] : spec.type === 'autobus' ? [-L / 2 + 1.2, -0.3, L / 2 - 2.6] : [-L / 2 + 1.2];
     for (const dz of doorZs) {
       const d = box(0.06, H - floor - 0.5, 1.2, doorMat, W / 2 + 0.02, floor + (H - floor - 0.5) / 2 + 0.1, dz);
       doors.push(d);
@@ -101,7 +102,17 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
     sp.rotation.y = Math.PI;
     body.add(sp);
     sign = { canvas: c, tex };
-    const axles = [-L / 2 + 2.6, -L / 2 + 2.6 + spec.wheelbase];
+    if (tram) {
+      // Klouby mezi články, sběrač a podvozky.
+      const joint = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0.8 });
+      for (const jz of [-L / 6, L / 6]) body.add(box(W + 0.04, H - 0.5, 0.5, joint, 0, H / 2 + 0.1, jz));
+      const pm = new THREE.MeshStandardMaterial({ color: 0x55585e, roughness: 0.5, metalness: 0.6 });
+      const arm = box(0.08, 0.08, 2.2, pm, 0, H + 0.55, -L / 6 + 1);
+      arm.rotation.x = 0.45;
+      body.add(arm, box(1.6, 0.08, 0.12, pm, 0, H + 1.0, -L / 6 + 0.1), box(1.2, 0.25, 1.4, joint, 0, H + 0.1, -L / 6 + 1.5));
+      for (const bz of [-L / 2 + 3, -L / 6 - 2.5, L / 6 + 2.5, L / 2 - 3]) body.add(box(W - 0.3, 0.45, 2.2, joint, 0, 0.35, bz));
+    }
+    const axles = tram ? [] : [-L / 2 + 2.6, -L / 2 + 2.6 + spec.wheelbase];
     axles.forEach((az, i) => {
       for (const sx of [-1, 1]) {
         const w = wheel(wr, 0.32);

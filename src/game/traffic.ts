@@ -49,14 +49,14 @@ export class Traffic {
   }
 
   private canUse(e: GEdge, fromNode: GNode): boolean {
-    if (e.cls === 'path' || e.cls === 'track') return false;
+    if (e.cls === 'path' || e.cls === 'track' || e.cls === 'tram') return false;
     return e.a === fromNode ? e.fwd : e.back;
   }
 
   private spawn(px: number, pz: number) {
     const ang = Math.random() * Math.PI * 2;
     const d = 180 + Math.random() * 450;
-    const near = this.world.graph.nearest(px + Math.cos(ang) * d, pz + Math.sin(ang) * d, 120, (e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service');
+    const near = this.world.graph.nearest(px + Math.cos(ang) * d, pz + Math.sin(ang) * d, 120, (e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service' && e.cls !== 'tram');
     if (!near) return;
     const e = near.e;
     const forward = e.fwd && (!e.back || Math.random() < 0.5);

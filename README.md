@@ -22,6 +22,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **AI doprava** jezdí po skutečné silniční síti a staví na **semaforech** (odvozených na velkých městských křižovatkách). Po chodnících chodí **chodci**.
 - **Práce:**
   - 🚌 Řidič autobusu: v Praze a Středočeském kraji jezdíte **skutečné linky PID** se skutečným pořadím zastávek a jízdním řádem (GTFS). Jinde vznikají linky ze skutečných zastávek MHD z OSM. Patří k tomu otevírání dveří, nástup cestujících a hodnocení přesnosti a plynulosti.
+  - 🚋 Řidič tramvaje: skutečné tramvajové linky PID, v Brně, Ostravě, Plzni, Olomouci a Liberci linky z tramvajových zastávek OSM. Tramvaj jede po skutečných kolejích, řídí se jen rozjezd, brzdění a dveře.
   - 🚕 Taxi: vyzvednutí a odvoz na skutečné adresy, taxametr a spropitné.
   - 📦 Rozvoz zásilek na adresy s časovým limitem.
 - **Management firmy:** založíte dopravní firmu, stavíte depa, kupujete autobusy, najímáte řidiče a zakládáte linky. Poptávka na lince se odvozuje z obestavěného prostoru budov kolem zastávek. Firma vydělává i ve chvíli, kdy jezdíte jinde, a její autobusy potkáte na silnici.

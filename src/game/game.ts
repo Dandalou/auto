@@ -21,7 +21,7 @@ import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
 
 const VEHICLE_COLORS: Record<VehicleType, number> = {
-  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xc8202a, meziměstský: 0x2b6cb0, kamion: 0x3a6b3a,
+  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xc8202a, meziměstský: 0x2b6cb0, kamion: 0x3a6b3a, tramvaj: 0xc8202a,
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -202,7 +202,7 @@ export class Game {
 
   /** Najde nejbližší silnici a postaví na ni vozidlo po směru jízdy. */
   snapToRoad(x: number, z: number): { x: number; z: number; heading: number } | null {
-    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway';
+    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway' && e.cls !== 'tram';
     const n = this.world.graph.nearest(x, z, 400, flt) ?? this.world.graph.nearest(x, z, 1500, flt);
     if (!n) return null;
     const e = n.e;
@@ -339,10 +339,80 @@ export class Game {
     this.navTarget = null;
     this.navT = 0;
     if (job instanceof BusJob) updateSign(this.model, job.line.number, job.line.stops[job.line.stops.length - 1].name);
+    // Tramvaj jede po kolejích celé trasy linky.
+    if (job instanceof BusJob && job.line.mode === 'tram') {
+      let path: [number, number][] = [];
+      for (const l of job.line.legs) path = path.concat(path.length ? l.slice(1) : l);
+      this.setTramPath(path);
+    } else this.tramPath = null;
+  }
+
+  private setTramPath(path: [number, number][]) {
+    // Dopředu trochu prodloužit začátek, aby tramvaj stála celá na trati.
+    this.tramPath = path;
+    this.tramCum = [0];
+    for (let i = 1; i < path.length; i++) this.tramCum.push(this.tramCum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+    this.tramS = Math.min(this.vehicle.spec.length * 0.55, this.tramCum[this.tramCum.length - 1]);
+    this.placeTram(0);
+  }
+
+  private tramPoint(s: number): [number, number] {
+    const p = this.tramPath!;
+    const c = this.tramCum;
+    s = Math.max(0, Math.min(c[c.length - 1], s));
+    let lo = 0, hi = c.length - 1;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (c[m] <= s) lo = m;
+      else hi = m;
+    }
+    const seg = c[hi] - c[lo] || 1;
+    const t = (s - c[lo]) / seg;
+    return [p[lo][0] + (p[hi][0] - p[lo][0]) * t, p[lo][1] + (p[hi][1] - p[lo][1]) * t];
+  }
+
+  /** Umístí tramvaj: přední konec na s, zadní o délku vozu zpět po trati. */
+  private placeTram(dt: number) {
+    const v = this.vehicle;
+    const L = v.spec.length;
+    const f = this.tramPoint(this.tramS);
+    const r = this.tramPoint(this.tramS - L);
+    const h = Math.atan2(f[0] - r[0], -(f[1] - r[1]));
+    if (dt > 0) {
+      let dh = h - v.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      v.yawRate = dh / dt;
+    }
+    v.heading = h;
+    v.x = (f[0] + r[0]) / 2;
+    v.z = (f[1] + r[1]) / 2;
+    const g = this.world.groundHeight(v.x, v.z, v.y + 1);
+    if (!Number.isNaN(g)) v.y = g;
+  }
+
+  private updateTram(dt: number, ax: { throttle: number; brake: number }) {
+    const v = this.vehicle;
+    const end = this.tramCum[this.tramCum.length - 1];
+    const prev = v.vF;
+    let a = ax.throttle * 1.3 - ax.brake * 1.8 - (v.vF > 0 ? 0.08 : 0);
+    if (v.doorsOpen) a = -3;
+    v.vF = Math.max(0, Math.min(v.spec.vmax, v.vF + a * dt));
+    if (this.tramS >= end - 0.5) v.vF = 0;
+    this.tramS = Math.min(end, this.tramS + v.vF * dt);
+    v.vL = 0;
+    v.accel = (v.vF - prev) / Math.max(dt, 1e-3);
+    this.placeTram(dt);
+    v.latAccel = v.vF * v.yawRate;
+    v.rpm = 600 + v.vF * 90;
+    v.gear = 1;
+    v.odometer += v.vF * dt;
+    v.onRoad = 'tram';
   }
 
   cancelJob() {
     if (!this.job) return;
+    this.tramPath = null;
     this.job.dispose();
     this.job = null;
     this.navPts = null;
@@ -454,6 +524,10 @@ export class Game {
   private speedT = 0;
   private redNode: unknown = null;
   private introT = 0;
+  /** Trasa tramvaje (x, z) a kumulativní délky. */
+  private tramPath: [number, number][] | null = null;
+  private tramCum: number[] = [];
+  private tramS = 0;
   /** Palivo 0..1. */
   fuel = 1;
   /** Stav vozidla 0..1. */
@@ -586,7 +660,9 @@ export class Game {
     }
     if (i.hit('KeyT') && !this.walking) this.refuel();
     this.audio.horn(!inPanel && !this.walking && i.down('KeyQ'));
-    if (i.hit('KeyR')) {
+    if (i.hit('KeyR') && this.vehicle.spec.type === 'tramvaj' && this.tramPath && !this.walking) {
+      this.placeTram(0);
+    } else if (i.hit('KeyR')) {
       const p = this.snapToRoad(this.px, this.pz);
       if (p) {
         if (this.walking) {
@@ -615,8 +691,11 @@ export class Game {
       if (this.condition < 0.5) ax.throttle *= 0.5 + this.condition;
     }
     const obstacles = [...this.traffic.obstacles(), ...this.pedestrians.obstacles()].filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
-    v.update(dt, ax, this.world, this.env.grip(), obstacles);
-    v.updateAttitude(this.world, dt);
+    if (v.spec.type === 'tramvaj' && this.tramPath) this.updateTram(dt, ax);
+    else {
+      v.update(dt, ax, this.world, this.env.grip(), obstacles);
+      v.updateAttitude(this.world, dt);
+    }
     this.crashCool -= dt;
     for (const imp of v.impacts) {
       if (imp.speed > 3 && this.crashCool <= 0) {

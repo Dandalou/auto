@@ -70,8 +70,8 @@ function jobsPanel(g: Game) {
     offersAt = { x: g.px, z: g.pz, t: performance.now() };
   }
   const own = (t: VehicleType[]) => t.some((v) => g.state.garage.includes(v));
-  const needs: Record<string, VehicleType[]> = { bus: ['autobus', 'meziměstský'], taxi: ['taxi', 'auto'], delivery: ['dodávka', 'auto', 'taxi'] };
-  const icon: Record<string, string> = { bus: '🚌', taxi: '🚕', delivery: '📦' };
+  const needs: Record<string, VehicleType[]> = { bus: ['autobus', 'meziměstský'], taxi: ['taxi', 'auto'], delivery: ['dodávka', 'auto', 'taxi'], tram: ['tramvaj'] };
+  const icon: Record<string, string> = { bus: '🚌', taxi: '🚕', delivery: '📦', tram: '' };
   const cards = offers.map((o, i) => {
     const owned = own(needs[o.kind]);
     return `<div class="card">
@@ -133,7 +133,7 @@ export function showJobResult(g: Game, r: JobResult, pay: number, rental: boolea
 // ------------------------------------------------------------ garáž
 
 function garagePanel(g: Game) {
-  const types = Object.keys(SPECS) as VehicleType[];
+  const types = (Object.keys(SPECS) as VehicleType[]).filter((t) => t !== 'tramvaj');
   const cards = types.map((t) => {
     const s = SPECS[t];
     const owned = g.state.garage.includes(t);

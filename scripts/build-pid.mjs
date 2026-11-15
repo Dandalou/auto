@@ -47,7 +47,7 @@ async function* rows(file) {
 const routes = new Map();
 for await (const r of rows('routes.txt')) {
   const t = Number(r.route_type);
-  if (t !== 3 && t !== 11) continue; // autobus, trolejbus
+  if (t !== 3 && t !== 11 && t !== 0) continue; // autobus, trolejbus, tramvaj
   if (r.is_substitute_transport === '1') continue;
   routes.set(r.route_id, { n: r.route_short_name, l: r.route_long_name, t, night: r.is_night === '1', reg: r.is_regional === '1' });
 }

@@ -29,15 +29,15 @@ export interface GEdge {
 
 export const ROAD_HALF_WIDTH: Record<string, number> = {
   motorway: 4.5, trunk: 4.3, primary: 4, secondary: 3.6, tertiary: 3.3, minor: 2.8, service: 1.9,
-  busway: 3.3, raceway: 4.5, track: 1.5, path: 0.9,
+  busway: 3.3, raceway: 4.5, track: 1.5, path: 0.9, tram: 1.4,
 };
 
 export const SPEED_LIMIT: Record<string, number> = {
   motorway: 130, trunk: 110, primary: 90, secondary: 80, tertiary: 70, minor: 50, service: 30,
-  busway: 50, raceway: 120, track: 30, path: 10,
+  busway: 50, raceway: 120, track: 30, path: 10, tram: 50,
 };
 
-export type RouteProfile = 'car' | 'bus' | 'walk';
+export type RouteProfile = 'car' | 'bus' | 'walk' | 'tram';
 
 const CELL = 40;
 
@@ -191,13 +191,15 @@ export class RoadGraph {
 
   /** Je bod na vozovce? Vrací třídu silnice nebo null. */
   surfaceAt(x: number, z: number): string | null {
-    const n = this.nearest(x, z, 6);
+    const n = this.nearest(x, z, 6, (e) => e.cls !== 'tram');
     if (!n) return null;
     const hw = ROAD_HALF_WIDTH[n.e.cls] ?? 2;
     return n.d <= hw + 0.4 ? n.e.cls : null;
   }
 
   static allowed(e: GEdge, profile: RouteProfile): boolean {
+    if (profile === 'tram') return e.cls === 'tram';
+    if (e.cls === 'tram') return false;
     if (profile === 'walk') return true;
     if (e.cls === 'path') return false;
     if (profile === 'bus' && e.cls === 'track') return false;

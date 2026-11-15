@@ -84,11 +84,12 @@ export interface PlannedLine {
   /** Skutečný jízdní řád (s od první zastávky), u linek PID. */
   times?: number[];
   headsign?: string;
+  mode?: 'bus' | 'tram';
 }
 
 /** Naplánuje linku ze skutečných zastávek v okolí bodu. */
-export function planBusLine(world: World, x: number, z: number, count = 7, rnd = Math.random): PlannedLine | null {
-  const byName = uniqueStops(world.allStops());
+export function planBusLine(world: World, x: number, z: number, count = 7, rnd = Math.random, mode: 'bus' | 'tram' = 'bus'): PlannedLine | null {
+  const byName = uniqueStops(mode === 'tram' ? world.allTramStops() : world.allStops());
   const names = [...byName.keys()];
   if (names.length < 3) return null;
   const center = (n: string) => {
@@ -128,7 +129,7 @@ export function planBusLine(world: World, x: number, z: number, count = 7, rnd =
     cands.sort((a, b) => b.w - a.w);
     let ok = false;
     for (const c of cands.slice(0, 4)) {
-      const r = world.graph.route(cur.x, cur.z, c.p.x, c.p.z, 'bus', 20000);
+      const r = world.graph.route(cur.x, cur.z, c.p.x, c.p.z, mode, 20000);
       if (!r) continue;
       const straight = Math.hypot(c.p.x - cur.x, c.p.z - cur.z);
       if (r.len > straight * 2.6 + 300) continue;
@@ -143,7 +144,7 @@ export function planBusLine(world: World, x: number, z: number, count = 7, rnd =
     if (!ok) break;
   }
   if (chain.length < 3) return null;
-  return { stops: chain, legs, legLen, number: String(100 + Math.floor(rnd() * 99)) };
+  return { stops: chain, legs, legLen, number: String(mode === 'tram' ? 1 + Math.floor(rnd() * 25) : 100 + Math.floor(rnd() * 99)), mode };
 }
 
 // --------------------------------------------------------------- autobus
@@ -178,6 +179,7 @@ export class BusJob extends Job {
   constructor(public line: PlannedLine, ctx: JobCtx) {
     super();
     const last = line.stops[line.stops.length - 1].name;
+    if (line.mode === 'tram') this.vehicle = ['tramvaj'];
     this.title = line.headsign
       ? `Linka ${line.number} (PID) směr ${line.headsign}: ${line.stops[0].name} → ${last}`
       : `Linka ${line.number}: ${line.stops[0].name} → ${last}`;
@@ -556,7 +558,7 @@ export class DeliveryJob extends Job {
 // --------------------------------------------------------------- nabídky
 
 export interface Offer {
-  kind: 'bus' | 'taxi' | 'delivery';
+  kind: 'bus' | 'taxi' | 'delivery' | 'tram';
   title: string;
   detail: string;
   estPay: number;
@@ -569,8 +571,24 @@ function addressWithStreet(world: World, p: NamedPoint): NamedPoint & { street: 
 
 export function generateOffers(world: World, x: number, z: number): Offer[] {
   const offers: Offer[] = [];
+  // Tramvaje: skutečné linky PID, jinde linky z tramvajových zastávek OSM.
+  const trams = planPidLines(world, x, z, 2, 'tram');
+  if (!trams.length) {
+    const t = planBusLine(world, x, z, 7, Math.random, 'tram');
+    if (t) trams.push(t as never);
+  }
+  for (const line of trams as PlannedLine[]) {
+    const km = line.legLen.reduce((a, b) => a + b, 0) / 1000;
+    offers.push({
+      kind: 'tram',
+      title: `🚋 ${line.number}${line.headsign ? ` → ${line.headsign}` : ''}: ${line.stops[0].name} → ${line.stops[line.stops.length - 1].name}`,
+      detail: `${line.headsign ? 'skutečná linka PID' : 'tramvajová linka'} · ${line.stops.length} zastávek · ${km.toFixed(1)} km · tramvaj`,
+      estPay: Math.round((line.stops.length * 260 + km * 160 + 100) * 1.2),
+      make: (ctx) => new BusJob(line, ctx),
+    });
+  }
   // Skutečné linky PID (Praha a Středočeský kraj).
-  for (const line of planPidLines(world, x, z, 3)) {
+  for (const line of planPidLines(world, x, z, 3, 'bus')) {
     const km = line.legLen.reduce((a, b) => a + b, 0) / 1000;
     offers.push({
       kind: 'bus',

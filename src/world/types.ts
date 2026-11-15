@@ -89,6 +89,8 @@ export interface TileData {
   stops?: NamedPoint[];
   /** Čerpací stanice. */
   fuel?: NamedPoint[];
+  /** Tramvajové zastávky. */
+  tramStops?: NamedPoint[];
   addresses?: NamedPoint[];
   places?: PlacePoint[];
   streets?: StreetLine[];
