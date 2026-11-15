@@ -15,7 +15,7 @@ interface SignalNode {
   axis: number; // úhel hlavní osy
   offset: number;
   group: THREE.Group;
-  lamps: { mesh: THREE.Mesh; angle: number }[];
+  lamps: { mesh: THREE.Mesh; glow: THREE.Sprite; angle: number }[];
 }
 
 const MAT = {
@@ -28,6 +28,25 @@ const MAT = {
 const POLE = new THREE.CylinderGeometry(0.07, 0.09, 3.4, 6).translate(0, 1.7, 0);
 const BOX = new THREE.BoxGeometry(0.32, 0.9, 0.25).translate(0, 3.2, 0);
 const LAMP = new THREE.SphereGeometry(0.14, 8, 6);
+
+function glowTex(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const GLOW_TEX = glowTex();
+const GLOW = {
+  red: new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xff3020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+  yellow: new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffb020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+  green: new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0x30ff70, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+};
 
 function angleOf(n: GNode, e: GEdge): number {
   const o = e.a === n ? e.b : e.a;
@@ -117,6 +136,8 @@ export class Signals {
         const c = this.light(s, l.angle);
         l.mesh.material = MAT[c];
         l.mesh.position.y = c === 'red' ? 3.45 : c === 'yellow' ? 3.2 : 2.95;
+        l.glow.material = GLOW[c];
+        l.glow.position.y = l.mesh.position.y;
       }
     }
   }
@@ -148,8 +169,11 @@ export class Signals {
       box.rotation.y = -ang;
       lamp.position.x += dx * 0.14;
       lamp.position.z += dz * 0.14;
-      group.add(pole, box, lamp);
-      lamps.push({ mesh: lamp, angle: ang });
+      const glow = new THREE.Sprite(GLOW.red);
+      glow.scale.set(1.3, 1.3, 1);
+      glow.position.set(lamp.position.x + dx * 0.1, 3.45, lamp.position.z + dz * 0.1);
+      group.add(pole, box, lamp, glow);
+      lamps.push({ mesh: lamp, glow, angle: ang });
     }
     this.group.add(group);
     this.active.set(n, { node: n, axis, offset: (n.id * 7.3) % CYCLE, group, lamps });

@@ -920,7 +920,7 @@ export class Game {
       ($('rpm') as HTMLElement).style.width = `${Math.min(100, (v.rpm / (v.spec.mass > 5000 ? 2400 : 6500)) * 100)}%`;
       this.urbanT -= 0.1;
       if (this.urbanT <= 0) {
-        this.urbanT = 1.5;
+        this.urbanT = 0.5;
         this.urban = this.world.buildingVolume(v.x, v.z, 220) > 50000;
       }
       const lim = this.speedLimit(v.onRoad);
