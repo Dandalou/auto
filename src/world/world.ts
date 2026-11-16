@@ -181,13 +181,25 @@ function glassify(mat: THREE.MeshStandardMaterial) {
     out.data[i + 3] = 255;
   }
   ctx.putImageData(out, 0, 0);
+  // Barva skla: kovový odraz se násobí albedem, tmavé sklo by odraz skrylo.
+  const sctx = src.getContext('2d')!;
+  const img = sctx.getImageData(0, 0, w, h);
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (out.data[i + 2] > 0) {
+      img.data[i] = img.data[i] * 0.45 + 150 * 0.55;
+      img.data[i + 1] = img.data[i + 1] * 0.45 + 168 * 0.55;
+      img.data[i + 2] = img.data[i + 2] * 0.45 + 185 * 0.55;
+    }
+  }
+  sctx.putImageData(img, 0, 0);
+  if (mat.map) mat.map.needsUpdate = true;
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   mat.roughnessMap = t;
   mat.metalnessMap = t;
   mat.roughness = 1;
   mat.metalness = 1;
-  mat.envMapIntensity = 6;
+  mat.envMapIntensity = 5;
   mat.needsUpdate = true;
 }
 
@@ -468,7 +480,7 @@ export class World {
     };
     addSnow(this.mats.roofs, false, 'roof');
     // Okna jako sklo: z textury fasády odvodit mapu drsnosti a kovovosti (sklo lesklé, zeď matná).
-    for (const m of [this.mats.walls, this.mats.panel, this.mats.house, this.mats.shop, ...Object.values(this.mats.facade)]) glassify(m);
+    for (const m of [this.mats.walls, this.mats.panel, this.mats.house, ...Object.values(this.mats.facade)]) glassify(m);
     // Svítí jen hlava lampy (světlá barva vrcholů), ne sloup.
     this.mats.lamp.onBeforeCompile = (sh) => {
       sh.fragmentShader = sh.fragmentShader.replace(
