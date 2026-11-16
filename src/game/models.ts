@@ -145,6 +145,7 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
       if (metro) {
         // Barevný pruh podél soupravy.
         const stripe = new THREE.MeshStandardMaterial({ color: 0x1a8f4c, roughness: 0.5 });
+        stripe.userData.stripe = true;
         body.add(box(W + 0.05, 0.35, L * 0.99, stripe, 0, 1.0, 0));
       }
       const pm = new THREE.MeshStandardMaterial({ color: 0x55585e, roughness: 0.5, metalness: 0.6 });

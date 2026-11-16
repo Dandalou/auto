@@ -397,7 +397,12 @@ export class Game {
       let path: [number, number][] = [];
       for (const l of job.line.legs) path = path.concat(path.length ? l.slice(1) : l);
       if (job.line.mode === 'metro') {
-        this.metro = new MetroTunnel(this.world, path, job.line.stops);
+        const lc = { A: [0, 0.65, 0.38], B: [0.97, 0.7, 0.13], C: [0.86, 0.2, 0.22] }[job.line.number] ?? [0.5, 0.5, 0.5];
+        this.metro = new MetroTunnel(this.world, path, job.line.stops, lc);
+        this.model.root.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+          if (m?.userData?.stripe) m.color.setRGB(lc[0], lc[1], lc[2]);
+        });
         this.scene.add(this.metro.group);
         this.state.settings.camera = 1;
       }

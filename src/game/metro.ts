@@ -24,7 +24,7 @@ export class MetroTunnel {
   pts: { x: number; z: number; y: number; s: number }[] = [];
   private anchor: { x: number; z: number };
 
-  constructor(private world: World, path: [number, number][], stops: MetroStop[]) {
+  constructor(private world: World, path: [number, number][], stops: MetroStop[], private lineColor = [0.0, 0.65, 0.38]) {
     // Převzorkování po 4 m.
     const raw: [number, number][] = [path[0]];
     for (let i = 1; i < path.length; i++) {
@@ -116,10 +116,11 @@ export class MetroTunnel {
       const l = Math.hypot(dx, dz) || 1;
       return [-dz / l, dx / l]; // vpravo
     });
-    const wall = [0.7, 0.68, 0.64];
-    const floor = [0.32, 0.31, 0.3];
-    const ceil = [0.58, 0.57, 0.55];
-    const stWall = [0.86, 0.83, 0.74];
+    const wall = [0.36, 0.35, 0.33];
+    const floor = [0.18, 0.17, 0.17];
+    const ceil = [0.3, 0.3, 0.29];
+    // Obklad stanic v barvě linky (zesvětlený, jako eloxované panely).
+    const stWall = this.lineColor.map((c) => 0.35 + c * 0.6);
     const stFloor = [0.62, 0.6, 0.58];
     const platform = [0.75, 0.73, 0.7];
     for (let i = 0; i + 1 < P.length; i++) {
