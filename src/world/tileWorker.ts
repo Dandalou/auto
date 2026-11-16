@@ -658,7 +658,8 @@ function orthoRoofColor(b: BuildCtx, ring: number[][], cx: number, cz: number): 
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
   }
   const rs: number[] = [], gs: number[] = [], bs: number[] = [];
-  const step = Math.max(px, Math.min(x1 - x0, z1 - z0) / 6);
+  // Nejvýš ~5×5 vzorků na budovu.
+  const step = Math.max(px, Math.max(x1 - x0, z1 - z0) / 5);
   const sample = (x: number, z: number) => {
     const i = Math.floor(x / px), j = Math.floor(z / px);
     if (i < 0 || j < 0 || i >= o.n || j >= o.n) return;
@@ -669,7 +670,7 @@ function orthoRoofColor(b: BuildCtx, ring: number[][], cx: number, cz: number): 
   };
   for (let z = z0 + step / 2; z < z1; z += step) {
     for (let x = x0 + step / 2; x < x1; x += step) {
-      if (distToRing(x, z, ring) < px * 1.2 || !pointInRing(x, z, ring)) continue;
+      if (!pointInRing(x, z, ring) || distToRing(x, z, ring) < px * 1.2) continue;
       sample(x, z);
     }
   }
@@ -1149,7 +1150,35 @@ function addSign(b: BuildCtx, sp: ShopPoi, ring: number[][], y: number) {
 
 const KIND_STATS: Record<string, number> = {};
 
+/** Jednoduchá prostorová mřížka bodů (buňka 40 m). */
+class PointGrid<T extends { x: number; z: number }> {
+  private cells = new Map<number, T[]>();
+  constructor(items: T[], private cs = 40) {
+    for (const it of items) {
+      const k = this.key(Math.floor(it.x / cs), Math.floor(it.z / cs));
+      let l = this.cells.get(k);
+      if (!l) this.cells.set(k, (l = []));
+      l.push(it);
+    }
+  }
+  private key(i: number, j: number) {
+    return (i + 1000) * 4096 + (j + 1000);
+  }
+  /** Body v obdélníku. */
+  query(x0: number, z0: number, x1: number, z1: number, out: T[] = []): T[] {
+    for (let j = Math.floor(z0 / this.cs); j <= Math.floor(z1 / this.cs); j++) {
+      for (let i = Math.floor(x0 / this.cs); i <= Math.floor(x1 / this.cs); i++) {
+        const l = this.cells.get(this.key(i, j));
+        if (l) for (const it of l) if (it.x >= x0 && it.x <= x1 && it.z >= z0 && it.z <= z1) out.push(it);
+      }
+    }
+    return out;
+  }
+}
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
+  const ruGrid = new PointGrid(b.ruian);
+  const shopGrid = new PointGrid(b.shopsPoi);
   const layer = vt.layers.building;
   if (!layer) return;
   for (let fi = 0; fi < layer.length; fi++) {
@@ -1193,13 +1222,12 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       const ringM = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
       // Údaje RÚIAN: budova, jejíž střed leží v půdorysu (největší počet podlaží).
       let ru: RuianPt | null = null;
+      let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+      for (const [x, z] of ringM) {
+        bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z);
+      }
       if (b.ruian.length) {
-        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-        for (const [x, z] of ringM) {
-          x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
-        }
-        for (const r of b.ruian) {
-          if (r.x < x0 || r.x > x1 || r.z < z0 || r.z > z1) continue;
+        for (const r of ruGrid.query(bx0, bz0, bx1, bz1)) {
           if (!pointInRing(r.x, r.z, ringM)) continue;
           if (!ru || r.floors > ru.floors) ru = r;
         }
@@ -1226,7 +1254,7 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       // Skutečné provozovny z OSM v budově nebo těsně u ní.
       const myShops: ShopPoi[] = [];
       if (minH < 2.5 && ph >= 5) {
-        for (const sp of b.shopsPoi) {
+        for (const sp of shopGrid.query(bx0 - 9, bz0 - 9, bx1 + 9, bz1 + 9)) {
           if (sp.used) continue;
           if (myShops.length >= 3) break;
           if (pointInRing(sp.x, sp.z, ringM) || distToRing(sp.x, sp.z, ringM) < 9) {
