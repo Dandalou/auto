@@ -81,6 +81,7 @@ export interface TileData {
   bridgeSides?: MeshArrays;
   rails?: MeshArrays;
   sidewalks?: MeshArrays;
+  crossings?: MeshArrays;
   shops?: MeshArrays;
   panels?: MeshArrays;
   houses?: MeshArrays;

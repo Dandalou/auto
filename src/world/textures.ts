@@ -400,6 +400,18 @@ export function shopTexture(): { map: THREE.CanvasTexture; emissive: THREE.Canva
   return { map: finish(c), emissive: finish(e.c) };
 }
 
+/** Zebra: u = napříč silnicí (1 opakování = 1 m: 0,5 m bílá, 0,5 m mezera), průhledné mezery. */
+export function zebraTexture(): THREE.CanvasTexture {
+  const { c, ctx } = canvas(64, 64);
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.fillStyle = 'rgba(245,245,238,0.95)';
+  ctx.fillRect(4, 0, 28, 64);
+  for (let i = 0; i < 80; i++) {
+    ctx.clearRect(4 + Math.random() * 28, Math.random() * 64, 1.5, 1.5);
+  }
+  return finish(c);
+}
+
 export function pathTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 64);
   ctx.fillStyle = '#ddd2b6';

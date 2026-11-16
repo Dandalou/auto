@@ -1337,6 +1337,9 @@ interface RoadCtx {
   sides: MeshBuf;
   rails: MeshBuf;
   walks: MeshBuf;
+  crossings: MeshBuf;
+  /** Leží bod na vozovce (jakékoli silnice)? */
+  carriage?: (x: number, z: number) => boolean;
   urban: (x: number, z: number) => boolean;
   bridges: FloatBuf;
   lines: RoadLine[];
@@ -1388,6 +1391,29 @@ const SIDEWALK = new Set(['minor', 'tertiary', 'secondary', 'primary', 'busway']
 function sidewalks(r: RoadCtx, pts: number[][], hw: number, roadY: number) {
   const w = 2.4;
   for (const side of [1, -1]) {
+    // Body chodníku na vozovce jiné ulice (křižovatky) vynechat.
+    const mid = offsetLine(pts, side * (hw + w / 2));
+    const keep = mid.map((p, i) => !r.carriage?.(p[0], p[1]) && !r.carriage?.(...(offsetLine(pts, side * (hw + 0.3))[i] as [number, number])));
+    const runs: number[][][] = [];
+    let cur: number[] = [];
+    keep.forEach((k, i) => {
+      if (k) cur.push(i);
+      else {
+        if (cur.length > 1) runs.push(cur.map((j) => [j]));
+        cur = [];
+      }
+    });
+    if (cur.length > 1) runs.push(cur.map((j) => [j]));
+    for (const run of runs) {
+      const idx = run.map((q) => q[0]);
+      const sub = idx.map((j) => pts[j]);
+      sidewalkSide(r, sub, hw, roadY, side, w);
+    }
+  }
+}
+
+function sidewalkSide(r: RoadCtx, pts: number[][], hw: number, roadY: number, side: number, w: number) {
+  {
     const mid = offsetLine(pts, side * (hw + w / 2));
     ribbon(r.walks, mid, w, roadY + 0.16, null, r, false, false);
     // Obrubník.
@@ -1606,10 +1632,92 @@ function flattenRoads(vt: VectorTile, grid: HeightGrid) {
   }
 }
 
+/**
+ * Přechody pro chodce: na městských křižovatkách (3+ ramena) zebra přes každé
+ * rameno ~ 4 m za okrajem křižující silnice.
+ */
+function buildCrossings(vt: VectorTile, r: RoadCtx) {
+  const layer = vt.layers.transportation;
+  if (!layer) return;
+  const s = r.s;
+  const OK = new Set(['minor', 'tertiary', 'secondary', 'primary', 'busway']);
+  // Uzly: počet ramen a největší šířka silnice v uzlu.
+  const nodes = new Map<string, { x: number; z: number; arms: { dx: number; dz: number; hw: number; y: number }[]; maxHw: number }>();
+  const key = (x: number, z: number) => `${Math.round(x * 2)},${Math.round(z * 2)}`;
+  for (let fi = 0; fi < layer.length; fi++) {
+    const f = layer.feature(fi);
+    if (f.type !== 2 || f.properties.brunnel) continue;
+    const cls = String(f.properties.class);
+    if (!OK.has(cls)) continue;
+    const hw = (ROAD_WIDTH[cls] ?? 6) / 2;
+    const yOff = 0.22 + (ROAD_PRIO[cls] ?? 1) * 0.025;
+    for (const line of f.loadGeometry()) {
+      const pts = line.map((q) => [q.x * s, q.y * s]);
+      for (let i = 0; i < pts.length; i++) {
+        const [x, z] = pts[i];
+        if (x < 0 || z < 0 || x > r.size || z > r.size) continue;
+        const k = key(x, z);
+        let n = nodes.get(k);
+        if (!n) nodes.set(k, (n = { x, z, arms: [], maxHw: 0 }));
+        n.maxHw = Math.max(n.maxHw, hw);
+        for (const j of [i - 1, i + 1]) {
+          if (j < 0 || j >= pts.length) continue;
+          const dx = pts[j][0] - x, dz = pts[j][1] - z;
+          const l = Math.hypot(dx, dz);
+          if (l < 8) continue; // příliš krátký úsek
+          n.arms.push({ dx: dx / l, dz: dz / l, hw, y: yOff });
+        }
+      }
+    }
+  }
+  const m = r.crossings;
+  for (const n of nodes.values()) {
+    if (n.arms.length < 3 || !r.urban(n.x, n.z)) continue;
+    for (const a of n.arms) {
+      const d = n.maxHw + 4;
+      const cx = n.x + a.dx * d, cz = n.z + a.dz * d;
+      const px = -a.dz, pz = a.dx; // napříč ramenem
+      const w = 1.6; // šířka přechodu podél silnice
+      const hw = a.hw - 0.2;
+      const y = r.height(cx, cz) + a.y + 0.03;
+      const P = (u: number, v: number) => [cx + px * u + a.dx * v, cz + pz * u + a.dz * v];
+      const q = [P(-hw, -w), P(hw, -w), P(hw, w), P(-hw, w)];
+      const ul = (hw * 2) / 1.0; // pruhy po 0,5 m (textura: bílý + mezera = 1 m)
+      const uv = [[0, 0], [ul, 0], [ul, 1], [0, 1]];
+      for (const i of [0, 1, 2, 0, 2, 3]) m.vert(q[i][0], y, q[i][1], 0, 1, 0, uv[i][0], uv[i][1]);
+    }
+  }
+}
+
 function buildRoads(vt: VectorTile, r: RoadCtx) {
   const layer = vt.layers.transportation;
   if (!layer) return;
   const s = r.s;
+  // Maska vozovek (1 px ≈ 1 m) – chodníky v křižovatkách se přes ni nekreslí.
+  {
+    const M = 1600;
+    const c = new OffscreenCanvas(M, M);
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    const k = M / EXTENT;
+    const pxPerM = M / r.size;
+    ctx.strokeStyle = '#fff';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let fi = 0; fi < layer.length; fi++) {
+      const f = layer.feature(fi);
+      const cls = String(f.properties.class);
+      if (f.type !== 2 || !DRIVABLE.has(cls) || cls === 'track' || f.properties.brunnel === 'tunnel') continue;
+      drawFeature(ctx, f, k, false);
+      ctx.lineWidth = Math.max(1, (ROAD_WIDTH[cls] ?? 5) * pxPerM);
+      ctx.stroke();
+    }
+    const d = ctx.getImageData(0, 0, M, M).data;
+    r.carriage = (x: number, z: number) => {
+      const i = Math.floor(x * pxPerM), j = Math.floor(z * pxPerM);
+      if (i < 0 || j < 0 || i >= M || j >= M) return false;
+      return d[(j * M + i) * 4] > 128;
+    };
+  }
   for (let fi = 0; fi < layer.length; fi++) {
     const f = layer.feature(fi);
     if (f.type !== 2) continue;
@@ -2115,7 +2223,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
         return Number.isNaN(v) ? sampler.sampleSafe((x + lx / sizeM) * scale, (y + lz / sizeM) * scale) : v;
       },
       marked: new MeshBuf(), plain: new MeshBuf(), paths: new MeshBuf(), sides: new MeshBuf(),
-      rails: new MeshBuf(), walks: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
+      rails: new MeshBuf(), walks: new MeshBuf(), crossings: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
     };
     buildRoads(vt, rctx);
     mark('silnice');
@@ -2125,13 +2233,15 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!rctx.plain.empty) data.roadsPlain = rctx.plain.arrays(true, false);
     if (!rctx.paths.empty) data.paths = rctx.paths.arrays(true, false);
     if (!rctx.walks.empty) data.sidewalks = rctx.walks.arrays(true, false);
+    buildCrossings(vt, rctx);
+    if (!rctx.crossings.empty) data.crossings = rctx.crossings.arrays(true, false);
     if (!bctx.shops.empty) data.shops = bctx.shops.arrays(true, true);
     if (!bctx.panels.empty) data.panels = bctx.panels.arrays(true, true);
     if (!bctx.houses.empty) data.houses = bctx.houses.arrays(true, true);
     if (!bctx.halls.empty) data.halls = bctx.halls.arrays(true, true);
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
-    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls]) addMesh(m);
+    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls, data.crossings]) addMesh(m);
     prof.signs = bctx.atlas ? bctx.atlas.n : 0;
     for (const [k, v] of Object.entries(KIND_STATS)) prof[`k_${k}`] = v;
     for (const k of Object.keys(KIND_STATS)) delete KIND_STATS[k];
