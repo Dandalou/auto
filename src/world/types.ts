@@ -1,7 +1,7 @@
 // Datové struktury předávané mezi workerem (stavba dlaždic) a hlavním vláknem.
 // Všechny souřadnice jsou lokální vůči severozápadnímu rohu dlaždice v metrech.
 
-export type TileKind = 'near' | 'far';
+export type TileKind = 'near' | 'far' | 'skyline';
 
 export interface TileRequest {
   id: number;

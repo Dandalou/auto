@@ -16,12 +16,14 @@ export interface Quality {
   trees: number;
   farRadius: number;
   shadows: boolean;
+  /** Poloměr prstence panoramatu (siluety budov) v dlaždicích z14. */
+  skyline: number;
 }
 
 export const QUALITY: Record<string, Quality> = {
-  nízká: { radius: 1, texSize: 512, trees: 4500, farRadius: 1, shadows: false },
-  střední: { radius: 2, texSize: 1024, trees: 8000, farRadius: 2, shadows: true },
-  vysoká: { radius: 2, texSize: 1024, trees: 12000, farRadius: 3, shadows: true },
+  nízká: { radius: 1, texSize: 512, trees: 4500, farRadius: 1, shadows: false, skyline: 0 },
+  střední: { radius: 2, texSize: 1024, trees: 8000, farRadius: 2, shadows: true, skyline: 3 },
+  vysoká: { radius: 2, texSize: 1024, trees: 12000, farRadius: 3, shadows: true, skyline: 4 },
 };
 
 interface NearTile {
@@ -514,6 +516,7 @@ export class World {
     this.quality = q;
     for (const k of [...this.near.keys()]) this.unloadNear(k);
     for (const k of [...this.far.keys()]) this.unloadFar(k);
+    for (const k of [...this.skyline.keys()]) this.unloadSkyline(k);
     this.queue = [];
     this.pending.clear();
   }
@@ -531,6 +534,7 @@ export class World {
     envUniforms.uOrigin.value.set(this.origin.x % 8192, this.origin.z % 8192);
     for (const t of this.near.values()) t.group.position.set(t.ox - this.origin.x, 0, t.oz - this.origin.z);
     for (const t of this.far.values()) t.group.position.set(t.ox - this.origin.x, -3, t.oz - this.origin.z);
+    for (const t of this.skyline.values()) t.group.position.set(t.ox - this.origin.x, 0, t.oz - this.origin.z);
     return true;
   }
 
@@ -582,12 +586,31 @@ export class World {
       const [, x, y] = k.split('/').map(Number);
       if (Math.max(Math.abs(x - fx), Math.abs(y - fy)) > F + 1) this.unloadFar(k);
     }
+    // Panorama: prstenec za detailním okolím.
+    const SK = this.quality.skyline;
+    if (SK > R) {
+      for (let dy = -SK; dy <= SK; dy++) {
+        for (let dx = -SK; dx <= SK; dx++) {
+          const c = Math.max(Math.abs(dx), Math.abs(dy));
+          if (c <= R) continue;
+          const k = `s${tileKey(14, tx + dx, ty + dy)}`;
+          if (!this.skyline.has(k) && !this.pending.has(k) && !this.near.has(tileKey(14, tx + dx, ty + dy))) this.request('skyline', 14, tx + dx, ty + dy);
+        }
+      }
+    }
+    for (const [k, t] of [...this.skyline]) {
+      const c = Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty));
+      if (c > SK + 1 || this.near.has(tileKey(14, t.x, t.y))) this.unloadSkyline(k);
+    }
     // Zahodit požadavky, které už nejsou potřeba.
     this.queue = this.queue.filter((r) => {
-      const k = tileKey(r.z, r.x, r.y);
+      const k = this.reqKey(r.kind, r.z, r.x, r.y);
+      const cheb = Math.max(Math.abs(r.x - tx), Math.abs(r.y - ty));
       const keep = r.kind === 'far'
         ? Math.max(Math.abs(r.x - fx), Math.abs(r.y - fy)) <= F + 1
-        : want.has(k) || Math.max(Math.abs(r.x - tx), Math.abs(r.y - ty)) <= R + 1;
+        : r.kind === 'skyline'
+          ? cheb > R && cheb <= SK + 1
+          : want.has(k) || cheb <= R + 1;
       if (!keep) this.pending.delete(k);
       return keep;
     });
@@ -634,9 +657,13 @@ export class World {
       const cx = (r.x + 0.5) * s;
       const cz = (r.y + 0.5) * s;
       // Blízké dlaždice mají přednost, vzdálený terén se dotahuje průběžně.
-      return Math.hypot(cx - this.center.x, cz - this.center.z) / (r.kind === 'near' ? 1 : 2.5);
+      return Math.hypot(cx - this.center.x, cz - this.center.z) / (r.kind === 'near' ? 1 : r.kind === 'skyline' ? 0.6 : 2.5);
     };
     this.queue.sort((a, b) => d(a) - d(b));
+  }
+
+  private reqKey(kind: TileKind, z: number, x: number, y: number): string {
+    return kind === 'skyline' ? `s${tileKey(z, x, y)}` : tileKey(z, x, y);
   }
 
   private request(kind: TileKind, z: number, x: number, y: number) {
@@ -652,7 +679,7 @@ export class World {
       aerial: this.aerial,
     };
     // Vzdálené dlaždice z12 berou vektorová data ze z12.
-    this.pending.set(tileKey(z, x, y), id);
+    this.pending.set(this.reqKey(kind, z, x, y), id);
     this.queue.push(req);
   }
 
@@ -679,7 +706,7 @@ export class World {
       this.stats.nearMs += performance.now() - t0;
       this.stats.nearCount++;
     }
-    const key = tileKey(d.z, d.x, d.y);
+    const key = this.reqKey(d.kind, d.z, d.x, d.y);
     if (this.pending.get(key) !== d.id) {
       // Mezitím zrušeno.
       d.texture?.close();
@@ -698,6 +725,7 @@ export class World {
       if (this.near.has(key)) this.unloadNear(key);
       this.addNear(key, d);
     }
+    else if (d.kind === 'skyline') this.addSkyline(key, d);
     else this.addFar(key, d);
     this.stats.pending = this.pending.size;
     this.pump();
@@ -887,6 +915,37 @@ export class World {
     this.graph.removeTile(k);
     this.near.delete(k);
     this.stats.nearLoaded = this.near.size;
+  }
+
+  /** Panoramatické dlaždice (siluety budov za hranicí detailního okolí). */
+  skyline = new Map<string, { x: number; y: number; ox: number; oz: number; group: THREE.Group; disposables: { dispose(): void }[] }>();
+
+  private addSkyline(key: string, d: TileData) {
+    const ox = d.x * TILE_M, oz = d.y * TILE_M;
+    // Mezitím se z dlaždice stala detailní – panorama nepotřebuje.
+    if (this.near.has(tileKey(14, d.x, d.y))) return;
+    const group = new THREE.Group();
+    group.position.set(ox - this.origin.x, 0, oz - this.origin.z);
+    const disposables: { dispose(): void }[] = [];
+    for (const [m, mat] of [[d.walls, this.mats.walls], [d.roofs, this.mats.roofs]] as [MeshArrays | undefined, THREE.Material][]) {
+      if (!m) continue;
+      const g = geometry(m);
+      disposables.push(g);
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      group.add(mesh);
+    }
+    this.root.add(group);
+    this.skyline.set(key, { x: d.x, y: d.y, ox, oz, group, disposables });
+  }
+
+  private unloadSkyline(k: string) {
+    const t = this.skyline.get(k);
+    if (!t) return;
+    this.root.remove(t.group);
+    for (const d of t.disposables) d.dispose();
+    this.skyline.delete(k);
   }
 
   private unloadFar(k: string) {

@@ -2117,7 +2117,78 @@ function points(vt: VectorTile, s: number) {
 
 // ---------------------------------------------------------------- hlavní
 
+/**
+ * Panoramatická dlaždice: jen siluety vyšších budov (od 12 m) a velkých staveb,
+ * jednoduché kvádry s plochou střechou. Výšky terénu z Terraria (bez ČÚZK).
+ */
+async function buildSkyline(req: TileRequest): Promise<{ data: TileData; transfer: Transferable[] }> {
+  const { z, x, y } = req;
+  const sizeM = TILE_M;
+  const ez = 13;
+  const scale = 2 ** (ez - z) * 256;
+  const sampler = new ElevSampler(ez);
+  const vtP = loadVector(req.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)));
+  await sampler.prepare((x - 0.05) * scale, (y - 0.05) * scale, (x + 1.05) * scale, (y + 1.05) * scale);
+  const vt = await vtP;
+  const height = (lx: number, lz: number) => sampler.sample((x + lx / sizeM) * scale, (y + lz / sizeM) * scale);
+  const walls = new MeshBuf();
+  const roofs = new MeshBuf();
+  const bctx = { walls, roofs } as unknown as BuildCtx;
+  const layer = vt?.layers.building;
+  const s = sizeM / EXTENT;
+  if (layer) {
+    for (let fi = 0; fi < layer.length; fi++) {
+      const f = layer.feature(fi);
+      const h = Number(f.properties.render_height) || 0;
+      if (Number(f.properties.render_min_height) > 2) continue;
+      for (const ring of f.loadGeometry()) {
+        if (ring.length < 4 || ringArea(ring) <= 0) continue;
+        const areaM = ringArea(ring) * s * s;
+        if (h < 12 && !(areaM > 2500 && h >= 7)) continue;
+        let cx = 0, cy = 0;
+        for (const p of ring) {
+          cx += p.x;
+          cy += p.y;
+        }
+        cx /= ring.length;
+        cy /= ring.length;
+        if (cx < 0 || cy < 0 || cx >= EXTENT || cy >= EXTENT) continue;
+        let base = Infinity;
+        for (const p of ring) base = Math.min(base, height(p.x * s, p.y * s));
+        const seed = hashStr(`${Math.round(cx)},${Math.round(cy)}`);
+        const col = FACADES[seed % FACADES.length];
+        const y1 = base + h;
+        let u = 0;
+        for (let i = 0; i < ring.length - 1; i++) {
+          u = addWall(bctx, ring[i].x * s, ring[i].y * s, ring[i + 1].x * s, ring[i + 1].y * s, base - 1, y1, u, col);
+        }
+        const flat: number[] = [];
+        for (let i = 0; i < ring.length - 1; i++) flat.push(ring[i].x * s, ring[i].y * s);
+        const idx = earcut(flat);
+        for (let i = 0; i < idx.length; i += 3) {
+          for (const k of [idx[i], idx[i + 2], idx[i + 1]]) roofs.vert(flat[k * 2], y1, flat[k * 2 + 1], 0, 1, 0, 0, 0, FLAT_ROOF);
+        }
+      }
+    }
+  }
+  const empty = new Float32Array(0);
+  const data: TileData = {
+    id: req.id, kind: 'skyline', z, x, y, size: sizeM, n: 0, heights: empty, terrain: { pos: empty, nor: empty }, texture: null,
+  };
+  const transfer: Transferable[] = [];
+  if (!walls.empty) {
+    data.walls = walls.arrays(true, true);
+    transfer.push(data.walls.pos.buffer, data.walls.nor.buffer, data.walls.uv!.buffer, data.walls.col!.buffer);
+  }
+  if (!roofs.empty) {
+    data.roofs = roofs.arrays(false, true);
+    transfer.push(data.roofs.pos.buffer, data.roofs.nor.buffer, data.roofs.col!.buffer);
+  }
+  return { data, transfer };
+}
+
 async function build(req: TileRequest): Promise<{ data: TileData; transfer: Transferable[] }> {
+  if (req.kind === 'skyline') return buildSkyline(req);
   const { z, x, y } = req;
   const sizeM = TILE_M * 2 ** (14 - z);
   const near = req.kind === 'near';

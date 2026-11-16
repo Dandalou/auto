@@ -13,6 +13,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 - **Skutečné barvy střech** z ortofota ČÚZK: rozpozná pálené tašky, hnědou krytinu, měď, břidlici/plech nebo šedou plochou střechu.
 - **Skutečné výšky budov** změřené z ČÚZK (DMP 1G − DMR 5G pod půdorysem), **skutečné počasí** (Open-Meteo) a čas.
 - **Přesný terén a vegetace z ČÚZK:** výškopis DMR 5G a stromy tam, kde skutečně rostou. Výška stromu se počítá z výšky porostu (DMP 1G − DMR 5G). Mimo republiku se použije Terrarium a lesy z OSM.
+- **Panorama:** za detailním okolím se dotahují siluety vyšších budov (střední kvalita do ~5 km, vysoká do ~7 km).
 - **Celá republika 1:1.** Dlaždice (~1,6 × 1,6 km) se načítají kolem hráče, terén až k horizontu se dotahuje hrubší vrstvou.
 - **Skutečné budovy** s výškou z OSM (`render_height`). Střechy jsou sedlové a valbové nad orientovaným obdélníkem půdorysu, městské bloky dostávají mansardové střechy. K tomu komíny, okna, která v noci svítí, a kolize.
 - **Pouliční lampy** v zastavěném území, popisky obcí přímo ve scéně a roční období (podzimní listí, holé stromy v zimě).
