@@ -50,9 +50,31 @@ export const LIGHT_GLOW = {
   tail: new THREE.SpriteMaterial({ map: GLOW, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, toneMapped: false }),
 };
 
-/** Záře předních a zadních světel na model vozidla. */
+const BLOB = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d')!;
+  const g = x.createRadialGradient(32, 32, 4, 32, 32, 32);
+  g.addColorStop(0, 'rgba(0,0,0,0.55)');
+  g.addColorStop(0.6, 'rgba(0,0,0,0.3)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const BLOB_MAT = new THREE.MeshBasicMaterial({
+  map: BLOB, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -12, polygonOffsetUnits: -24,
+});
+const BLOB_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+
+/** Záře předních a zadních světel na model vozidla, a měkký stín pod ním. */
 export function addLightGlow(model: VehicleModel, spec: VehicleSpec) {
   const L = spec.length, W = spec.width;
+  const blob = new THREE.Mesh(BLOB_GEO, BLOB_MAT);
+  blob.scale.set(W * 1.5, 1, L * 1.2);
+  blob.position.y = 0.06;
+  blob.renderOrder = 1;
+  model.root.add(blob);
   const y = spec.mass > 5000 ? 0.85 : 0.75;
   for (const sx of [-1, 1]) {
     const h = new THREE.Sprite(LIGHT_GLOW.head);
