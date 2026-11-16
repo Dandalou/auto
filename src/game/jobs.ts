@@ -598,7 +598,8 @@ export function generateOffers(world: World, x: number, z: number): Offer[] {
       make: (ctx) => new BusJob(line, ctx),
     });
   }
-  for (let i = 0; i < (offers.length ? 1 : 3); i++) {
+  const pidBus = offers.filter((o) => o.kind === 'bus').length;
+  for (let i = 0; i < (pidBus ? 1 : 3); i++) {
     const line = planBusLine(world, x, z, 5 + i * 2);
     if (!line) break;
     if (offers.some((o) => o.title.includes(line.stops[0].name) && o.title.includes(line.stops[line.stops.length - 1].name))) continue;
