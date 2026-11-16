@@ -631,6 +631,8 @@ interface BuildCtx {
   shopsPoi: ShopPoi[];
   signs: MeshBuf;
   atlas: SignAtlas | null;
+  /** Kostely (body z OSM) – dostanou věž. */
+  churches: { x: number; z: number; used: boolean }[];
   /** Letecký snímek ČÚZK (RGBA, n × n) pro barvy střech. */
   ortho: { data: Uint8ClampedArray; n: number } | null;
 }
@@ -1226,6 +1228,61 @@ class PointGrid<T extends { x: number; z: number }> {
   }
 }
 
+/** Věž na konci lodi kostela: hranolová věž s římsou a jehlanovou (nebo cibulovou) střechou. */
+function churchTower(b: BuildCtx, o: NonNullable<ReturnType<typeof obb>>, base: number, top: number, roofY: number, seed: number, col: number[]) {
+  const tw = Math.max(3.2, Math.min(7, o.hs * 1.15));
+  const half = tw / 2;
+  // Věž u západního (náhodně zvoleného) konce lodi.
+  const end = (seed >>> 5) % 2 ? 1 : -1;
+  const a = end * (o.hl - half * 0.9);
+  const cx = o.cx + o.ux * a, cz = o.cz + o.uz * a;
+  const vx = -o.uz, vz = o.ux;
+  const corner = (p: number, q: number) => [cx + o.ux * p + vx * q, cz + o.uz * p + vz * q];
+  const c = [corner(-half, -half), corner(half, -half), corner(half, half), corner(-half, half)];
+  // Výška: nad hřebenem lodi o 1,5–2,5násobek šířky.
+  const yt = Math.max(roofY + 6, top + 14) + tw * (1.5 + ((seed >>> 9) % 10) / 10);
+  // Stěny (fasáda s okny – zvukové otvory), orientace ven.
+  const ring = [c[0], c[3], c[2], c[1], c[0]];
+  const ccw = ringAreaM(ring) > 0 ? ring : [...ring].reverse();
+  let u = 0;
+  for (let i = 0; i < 4; i++) u = addWall(b, ccw[i][0], ccw[i][1], ccw[i + 1][0], ccw[i + 1][1], base - 0.5, yt, u, col);
+  // Římsa.
+  roofBox(b, cx, cz, o.ux, o.uz, half + 0.25, half + 0.25, yt - 0.1, yt + 0.35, col.map((v) => v * 0.9));
+  const R = b.roofs;
+  const onion = (seed >>> 13) % 3 === 0;
+  const spireCol = onion ? [0.12, 0.3, 0.24] : [0.2, 0.22, 0.25];
+  const y0 = yt + 0.35;
+  if (onion) {
+    // Barokní báň: dvě komolé části a lucerna.
+    const prof = [[1.0, 0], [1.15, 0.5], [0.6, 1.3], [0.35, 1.6], [0.35, 2.2], [0.55, 2.6], [0.1, 3.6], [0.02, 4.6]];
+    const k = half * 0.95;
+    const ang = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i / 8) * Math.PI * 2);
+    for (let j = 0; j + 1 < prof.length; j++) {
+      for (let i = 0; i < 8; i++) {
+        const a0 = ang[i], a1 = ang[(i + 1) % 8];
+        const P = (r: number, h: number, an: number) => [cx + Math.cos(an) * r * k, y0 + h * k, cz + Math.sin(an) * r * k];
+        const p00 = P(prof[j][0], prof[j][1], a0), p01 = P(prof[j][0], prof[j][1], a1);
+        const p10 = P(prof[j + 1][0], prof[j + 1][1], a0), p11 = P(prof[j + 1][0], prof[j + 1][1], a1);
+        tri(R, p00, p01, p11, spireCol);
+        tri(R, p00, p11, p10, spireCol);
+      }
+    }
+  } else {
+    // Jehlan.
+    const apex = [cx, y0 + tw * 2.2, cz];
+    const cc = c.map((q) => [q[0], y0, q[1]]);
+    for (let i = 0; i < 4; i++) tri(R, cc[i], cc[(i + 1) % 4], apex, spireCol);
+  }
+  // Kolize věže.
+  for (let i = 0; i < 4; i++) b.edges.push(ccw[i][0], ccw[i][1], ccw[i + 1][0], ccw[i + 1][1], yt);
+}
+
+function ringAreaM(r: number[][]): number {
+  let a = 0;
+  for (let i = 0; i < r.length - 1; i++) a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1];
+  return a / 2;
+}
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
   const ruGrid = new PointGrid(b.ruian);
   const shopGrid = new PointGrid(b.shopsPoi);
@@ -1348,6 +1405,15 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
           u = addWall(b, ax, az, bx, bz, y0, y1, u, wallCol, shopTop, target, floorH);
           if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
+        }
+      }
+      // Kostelní věž.
+      if (minH < 2.5 && areaM > 70) {
+        const ch = b.churches.find((c) => !c.used && (pointInRing(c.x, c.z, ringM) || distToRing(c.x, c.z, ringM) < 6));
+        if (ch) {
+          ch.used = true;
+          const ob = bbP ?? obb(ringM);
+          if (ob) churchTower(b, ob, base, top, y1, seed, col);
         }
       }
       // Cedule obchodů nad výlohou na nejbližší stěně.
@@ -2344,11 +2410,17 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     mark('ortofoto');
     // Provozovny z OSM (poi) pro cedule.
     const shopsPoi: ShopPoi[] = [];
+    const churches: { x: number; z: number; used: boolean }[] = [];
     const poi = vt.layers.poi;
     if (poi) {
       for (let i = 0; i < poi.length; i++) {
         const f = poi.feature(i);
         const cls = String(f.properties.class);
+        if (cls === 'place_of_worship' && f.properties.subclass === 'christian' && !/fara|sbor|modlitebna|kaple/i.test(String(f.properties.name ?? ''))) {
+          const g = f.loadGeometry()[0]?.[0];
+          if (g) churches.push({ x: g.x * s, z: g.y * s, used: false });
+          continue;
+        }
         const name = f.properties.name;
         if (!name || !SHOP_CLASSES.has(cls)) continue;
         const g = f.loadGeometry()[0]?.[0];
@@ -2365,7 +2437,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
       s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(), houses: new MeshBuf(), halls: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
       facades: { historic: new MeshBuf(), modern: new MeshBuf(), office: new MeshBuf(), garage: new MeshBuf(), wood: new MeshBuf() },
-      ruian, shopsPoi, signs: new MeshBuf(), atlas: shopsPoi.length ? new SignAtlas() : null, ortho,
+      churches, ruian, shopsPoi, signs: new MeshBuf(), atlas: shopsPoi.length ? new SignAtlas() : null, ortho,
     };
     buildBuildings(vt, bctx);
     mark('budovy');

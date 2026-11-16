@@ -10,6 +10,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 
 - **Vzhled budov podle RÚIAN**: počet podlaží, využití (rodinný dům, bytový dům, obchod, administrativa, průmysl, garáž), konstrukce (panel, cihla, dřevo) a rok dokončení určují fasádu – historická, moderní, panelová, kancelářská, hala, garáž, roubenka. **Skutečné obchody, restaurace a banky z OSM** mají výlohu a ceduli s názvem, v noci podsvícenou.
 - **Letecký snímek jako povrch** (volba v nastavení, ortofoto ČÚZK) místo mapových barev.
+- **Kostelní věže** (jehlan nebo barokní báň) u kostelů z OSM, šikmé střechy s vikýři a komíny.
 - **Skutečné barvy střech** z ortofota ČÚZK: rozpozná pálené tašky, hnědou krytinu, měď, břidlici/plech nebo šedou plochou střechu.
 - **Skutečné výšky budov** změřené z ČÚZK (DMP 1G − DMR 5G pod půdorysem), **skutečné počasí** (Open-Meteo) a čas.
 - **Přesný terén a vegetace z ČÚZK:** výškopis DMR 5G a stromy tam, kde skutečně rostou. Výška stromu se počítá z výšky porostu (DMP 1G − DMR 5G). Mimo republiku se použije Terrarium a lesy z OSM.
