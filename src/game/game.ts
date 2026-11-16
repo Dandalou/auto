@@ -415,7 +415,8 @@ export class Game {
     this.tramPath = path;
     this.tramCum = [0];
     for (let i = 1; i < path.length; i++) this.tramCum.push(this.tramCum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
-    this.tramS = Math.min(this.vehicle.spec.length + 2, this.tramCum[this.tramCum.length - 1]);
+    // Metro: čelo na konci nástupiště výchozí stanice (stanice sahá ±70 m).
+    this.tramS = Math.min(this.metro ? 64 : this.vehicle.spec.length + 2, this.tramCum[this.tramCum.length - 1]);
     this.placeTram(0);
   }
 
@@ -927,6 +928,11 @@ export class Game {
       desired.z = target.z + hz * along + hf * side;
       // Na kolejích: výška kabiny podle trati (vlak je dlouhý a trať se svažuje).
       if (this.isRail() && this.tramPath) {
+        // Kabina = čelo vlaku na trati (model může být na začátku trasy zkrácený).
+        const [cxw, czw] = this.tramPoint(this.tramS - 1.1);
+        const o = this.world.origin;
+        desired.x = cxw - o.x + (-hz) * side;
+        desired.z = czw - o.z + hf * side;
         const yf = this.metro ? this.metro.yAtS(this.tramS - 1.1) : v.y + Math.sin(v.pitch) * along;
         desired.y = yf + up;
       }
