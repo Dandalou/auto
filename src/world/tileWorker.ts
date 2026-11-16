@@ -998,6 +998,36 @@ function pitchedRoof(b: BuildCtx, o: NonNullable<ReturnType<typeof obb>>, y1: nu
     tri(R, c10, c11, r1, roofDark);
     tri(R, c01, c00, r0, roofDark);
   }
+  // Vikýře na delších střechách (podkrovní okna).
+  if (o.hl > 5 && o.hs > 3.2 && (seed >>> 11) % 3 !== 0) {
+    const spacing = 4.2;
+    const n = Math.min(6, Math.floor((Math.min(rl, o.hl) * 2 - 2) / spacing));
+    const sides = (seed >>> 13) % 2 ? [1, -1] : [1];
+    const win = [0.16, 0.19, 0.23];
+    for (const side of sides) {
+      const c = side * hs * 0.5;
+      // Výška střešní plochy v místě vikýře.
+      const yr = y1 + rh * (1 - Math.abs(c) / hs) - 0.35;
+      for (let k = 0; k < n; k++) {
+        const a = (k - (n - 1) / 2) * spacing;
+        const dx = cx + ux * a + vx * c, dz = cz + uz * a + vz * c;
+        roofBox(b, dx, dz, ux, uz, 0.65, 0.75, yr - 0.6, yr + 1.05, wallCol);
+        // Stříška vikýře.
+        const t0 = P(a - 0.8, c - side * 0.9, yr + 1.0), t1 = P(a + 0.8, c - side * 0.9, yr + 1.0);
+        const f0 = P(a - 0.8, c + side * 0.85, yr + 1.0), f1 = P(a + 0.8, c + side * 0.85, yr + 1.0);
+        const top0 = P(a - 0.8, c, yr + 1.45), top1 = P(a + 0.8, c, yr + 1.45);
+        tri(R, f0, f1, top1, roofCol);
+        tri(R, f0, top1, top0, roofCol);
+        tri(R, t0, t1, top1, roofCol);
+        tri(R, t0, top1, top0, roofCol);
+        // Okno na čelní stěně.
+        const w0 = P(a - 0.4, c + side * 0.77, yr - 0.1), w1 = P(a + 0.4, c + side * 0.77, yr - 0.1);
+        const w2 = P(a + 0.4, c + side * 0.77, yr + 0.85), w3 = P(a - 0.4, c + side * 0.77, yr + 0.85);
+        const nx = vx * side, nz = vz * side;
+        for (const v of [w0, w1, w2, w0, w2, w3]) R.vert(v[0], v[1], v[2], nx, 0, nz, 0, 0, win);
+      }
+    }
+  }
   // Komín.
   if ((seed >>> 5) % 5 < 3 && o.hs > 2.5) {
     const a = ((seed >>> 7) % 100) / 100 * 1.2 - 0.6;
