@@ -512,6 +512,7 @@ const FACADES = ['#f1e6cc', '#f0d896', '#ecc6b4', '#c8d6e2', '#f4f1ea', '#e2b27a
 const ROOFS = ['#a9503a', '#9c5a42', '#b2674a', '#77513f', '#6e7179', '#575a62', '#94463a', '#a5583e'].map(lin);
 const FLAT_ROOF = lin('#8f8c88');
 const CHIMNEY = lin('#8a4b3a');
+const HALL_COL = ['#d9dcdf', '#b9c4cf', '#e8e4dc', '#9fb3c4', '#c9cdc4'].map(lin);
 
 const COLOUR_NAMES: Record<string, string> = {
   white: '#f4f2ec', lightgrey: '#d6d4cf', grey: '#a6a49f', gray: '#a6a49f', yellow: '#f0d88c', beige: '#e8dcbc',
@@ -540,6 +541,9 @@ interface BuildCtx {
   shops: MeshBuf;
   /** Fasády panelových domů. */
   panels: MeshBuf;
+  /** Rodinné domy a haly. */
+  houses: MeshBuf;
+  halls: MeshBuf;
   /** Výška povrchu nad terénem (DMP − DMR) z ČÚZK, mřížka cn × cn, nebo null. */
   canopy: Float32Array | null;
   cn: number;
@@ -908,11 +912,14 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         const ob = obb(ringM);
         panel = !!ob && areaM / ob.area > 0.85 && ob.hl / Math.max(ob.hs, 1) > 1.6;
       }
+      // Typ fasády: hala (velká a nízká), rodinný dům (malý a nízký), jinak městský dům.
+      const hall = !panel && shopTop === 0 && areaM > 900 && ph < 16 && minH < 2.5;
+      const house = !panel && !hall && shopTop === 0 && areaM < 260 && ph < 9;
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
-          u = addWall(b, ax, az, bx, bz, y0, y1, u, col, shopTop, panel ? b.panels : undefined);
+          u = addWall(b, ax, az, bx, bz, y0, y1, u, hall && !custom ? HALL_COL[seed % HALL_COL.length] : col, shopTop, panel ? b.panels : hall ? b.halls : house ? b.houses : undefined);
           if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
         }
       }
@@ -1688,7 +1695,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   if (near && vt) {
     const s = sizeM / EXTENT;
     const bctx: BuildCtx = {
-      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(),
+      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(), houses: new MeshBuf(), halls: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
     };
     buildBuildings(vt, bctx);
@@ -1712,9 +1719,11 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!rctx.walks.empty) data.sidewalks = rctx.walks.arrays(true, false);
     if (!bctx.shops.empty) data.shops = bctx.shops.arrays(true, true);
     if (!bctx.panels.empty) data.panels = bctx.panels.arrays(true, true);
+    if (!bctx.houses.empty) data.houses = bctx.houses.arrays(true, true);
+    if (!bctx.halls.empty) data.halls = bctx.halls.arrays(true, true);
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
-    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels]) addMesh(m);
+    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls]) addMesh(m);
     let circles: number[] = [];
     if (req.treeBudget > 0) {
       const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);

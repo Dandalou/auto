@@ -136,6 +136,71 @@ export function panelTextures(): { map: THREE.CanvasTexture; emissive: THREE.Can
   return { map: finish(a.c), emissive: finish(b.c) };
 }
 
+/** Rodinný dům: menší okna s okenicemi, 4 × 4 buňky na dlaždici textury. */
+export function houseTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
+  const S = 256, cell = 64;
+  const a = canvas(S, S);
+  const b = canvas(S, S);
+  a.ctx.fillStyle = '#ffffff';
+  a.ctx.fillRect(0, 0, S, S);
+  b.ctx.fillStyle = '#000';
+  b.ctx.fillRect(0, 0, S, S);
+  for (let j = 0; j < 4; j++) {
+    for (let i = 0; i < 4; i++) {
+      const x = i * cell, y = j * cell;
+      if ((i + j) % 3 === 2) continue; // místy holá zeď
+      const ww = 22, wh = 26;
+      const wx = x + (cell - ww) / 2, wy = y + 16;
+      // Okenice.
+      a.ctx.fillStyle = (i + j) % 2 ? '#6b4a32' : '#3f5a3c';
+      a.ctx.fillRect(wx - 9, wy, 8, wh);
+      a.ctx.fillRect(wx + ww + 1, wy, 8, wh);
+      a.ctx.fillStyle = '#f2efe8';
+      a.ctx.fillRect(wx - 2, wy - 2, ww + 4, wh + 4);
+      a.ctx.fillStyle = '#3d4652';
+      a.ctx.fillRect(wx, wy, ww, wh);
+      a.ctx.fillStyle = '#f2efe8';
+      a.ctx.fillRect(wx + ww / 2 - 1, wy, 2, wh);
+      a.ctx.fillRect(wx, wy + wh / 2 - 1, ww, 2);
+      if ((i * 3 + j) % 4 === 0) {
+        b.ctx.fillStyle = '#ffd08a';
+        b.ctx.fillRect(wx, wy, ww, wh);
+      }
+    }
+  }
+  return { map: finish(a.c), emissive: finish(b.c) };
+}
+
+/** Hala: trapézový plech s pásem oken nahoře. */
+export function hallTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
+  const S = 256;
+  const a = canvas(S, S);
+  const b = canvas(S, S);
+  a.ctx.fillStyle = '#ffffff';
+  a.ctx.fillRect(0, 0, S, S);
+  for (let x = 0; x < S; x += 8) {
+    a.ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    a.ctx.fillRect(x, 0, 3, S);
+    a.ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    a.ctx.fillRect(x + 4, 0, 1, S);
+  }
+  b.ctx.fillStyle = '#000';
+  b.ctx.fillRect(0, 0, S, S);
+  // Pás oken v horní části každého 12m bloku (textura = 12 m výšky).
+  a.ctx.fillStyle = '#4a5866';
+  a.ctx.fillRect(0, 20, S, 22);
+  a.ctx.fillStyle = 'rgba(200,220,235,0.35)';
+  for (let x = 0; x < S; x += 32) a.ctx.fillRect(x + 2, 22, 14, 18);
+  a.ctx.fillStyle = '#d9d9d9';
+  for (let x = 0; x < S; x += 32) a.ctx.fillRect(x, 20, 2, 22);
+  b.ctx.fillStyle = '#e8f0ff';
+  b.ctx.fillRect(0, 20, S, 22);
+  // Sokl.
+  a.ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  a.ctx.fillRect(0, S - 18, S, 18);
+  return { map: finish(a.c), emissive: finish(b.c) };
+}
+
 /** Dlažba chodníku: u = příčně (2,4 m), v = délka (8 m na opakování). */
 export function sidewalkTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 256);
