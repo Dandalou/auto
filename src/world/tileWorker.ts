@@ -1264,7 +1264,7 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
     if (f.type !== 2) continue;
     const p = f.properties;
     const cls = String(p.class);
-    const isRail = cls === 'rail' || (cls === 'transit' && p.subclass === 'tram');
+    const isRail = cls === 'rail' || (cls === 'transit' && (p.subclass === 'tram' || p.subclass === 'subway'));
     const width = ROAD_WIDTH[cls];
     if (!width && !isRail) continue;
     const bridge = p.brunnel === 'bridge';
@@ -1334,7 +1334,8 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
           }
         }
         const isTram = cls === 'transit' && p.subclass === 'tram';
-        if (DRIVABLE.has(cls) || cls === 'path' || isTram) {
+        const isMetro = cls === 'transit' && p.subclass === 'subway';
+        if (DRIVABLE.has(cls) || cls === 'path' || isTram || isMetro) {
           const arr = new Float32Array(part.length * 3);
           part.forEach((q, i) => {
             const x = q.x * s, z = q.y * s;
@@ -1342,7 +1343,7 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
             arr[i * 3 + 1] = bridge && heights ? NaN : r.height(x, z);
             arr[i * 3 + 2] = z;
           });
-          r.lines.push({ cls: isTram ? 'tram' : cls, oneway, bridge, tunnel, pts: arr });
+          r.lines.push({ cls: isTram ? 'tram' : isMetro ? 'metro' : cls, oneway: isMetro ? 0 : oneway, bridge, tunnel, pts: arr });
         }
       }
     }

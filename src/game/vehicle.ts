@@ -3,7 +3,7 @@
 
 import type { World } from '../world/world';
 
-export type VehicleType = 'auto' | 'taxi' | 'dodávka' | 'autobus' | 'meziměstský' | 'kamion' | 'tramvaj';
+export type VehicleType = 'auto' | 'taxi' | 'dodávka' | 'autobus' | 'meziměstský' | 'kamion' | 'tramvaj' | 'metro';
 
 export interface VehicleSpec {
   type: VehicleType;
@@ -53,6 +53,10 @@ export const SPECS: Record<VehicleType, VehicleSpec> = {
   tramvaj: {
     type: 'tramvaj', name: 'Tramvaj', mass: 40000, length: 31, width: 2.46, height: 3.5, wheelbase: 20,
     power: 540e3, vmax: 22.2, steerMax: 0, brake: 2.5, gears: [1], price: 0, seats: 180, tank: 1, consumption: 0,
+  },
+  metro: {
+    type: 'metro', name: 'Souprava metra', mass: 160000, length: 96, width: 2.7, height: 3.6, wheelbase: 80,
+    power: 2400e3, vmax: 22.2, steerMax: 0, brake: 3, gears: [1], price: 0, seats: 1100, tank: 1, consumption: 0,
   },
 };
 

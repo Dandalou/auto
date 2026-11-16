@@ -71,7 +71,7 @@ export class Signals {
   private isSignal(n: GNode): boolean {
     const c = this.checked.get(n);
     if (c !== undefined) return c;
-    const edges = [...n.out, ...n.inn].filter((e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'tram');
+    const edges = [...n.out, ...n.inn].filter((e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'tram' && e.cls !== 'metro');
     const neigh = new Set(edges.map((e) => (e.a === n ? e.b : e.a)));
     let res = neigh.size >= 4 && edges.some((e) => MAJOR.has(e.cls));
     if (res) res = this.world.buildingVolume(n.x, n.z, 200) > 50000;
@@ -143,7 +143,7 @@ export class Signals {
   }
 
   private create(n: GNode) {
-    const edges = [...n.out, ...n.inn].filter((e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'tram');
+    const edges = [...n.out, ...n.inn].filter((e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'tram' && e.cls !== 'metro');
     const major = edges.reduce((a, b) => (MAJOR.has(b.cls) && !MAJOR.has(a.cls) ? b : a), edges[0]);
     const axis = angleOf(n, major);
     const group = new THREE.Group();

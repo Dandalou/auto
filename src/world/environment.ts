@@ -14,6 +14,8 @@ export class Environment {
   season: Season = 'léto';
   /** 0 = den, 1 = noc. */
   night = 0;
+  /** Hráč je v tunelu metra. */
+  underground = false;
   readonly sun = new THREE.DirectionalLight(0xffffff, 3);
   readonly hemi = new THREE.HemisphereLight(0xbcd4ff, 0x5b5040, 1.1);
   private sky = new Sky();
@@ -173,10 +175,23 @@ export class Environment {
     this.scene.background = this.weather === 'mlha' || this.night > 0.9 ? fog.color : null;
 
     this.updateEnvMap(dt, day, overcast);
+    if (this.underground) {
+      // V tunelu: bez slunce a oblohy, tlumené světlo, tma v dálce.
+      this.sun.intensity = 0;
+      this.hemi.intensity = 0.35;
+      this.hemi.color.setRGB(0.9, 0.88, 0.8);
+      this.hemi.groundColor.setRGB(0.3, 0.3, 0.3);
+      fog.color.setRGB(0.04, 0.04, 0.05);
+      fog.near = 80;
+      fog.far = 900;
+      this.sky.visible = false;
+      this.scene.background = fog.color;
+      this.scene.environmentIntensity = 0.02;
+    }
 
     // Srážky sledují kameru.
-    this.rain.visible = this.weather === 'déšť';
-    this.snow.visible = this.weather === 'sníh';
+    this.rain.visible = this.weather === 'déšť' && !this.underground;
+    this.snow.visible = this.weather === 'sníh' && !this.underground;
     const fall = (obj: THREE.Object3D, speed: number) => {
       if (!obj.visible) return;
       obj.position.set(camPos.x, camPos.y - 20, camPos.z);

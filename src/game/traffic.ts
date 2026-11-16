@@ -51,6 +51,7 @@ export class Traffic {
 
   private canUse(e: GEdge, fromNode: GNode, tram = false): boolean {
     if (tram !== (e.cls === 'tram')) return false;
+    if (e.cls === 'metro') return false;
     if (e.cls === 'path' || e.cls === 'track') return false;
     return e.a === fromNode ? e.fwd : e.back;
   }
@@ -58,7 +59,7 @@ export class Traffic {
   private spawn(px: number, pz: number, tram = false) {
     const ang = Math.random() * Math.PI * 2;
     const d = 180 + Math.random() * 450;
-    const flt = tram ? (e: GEdge) => e.cls === 'tram' : (e: GEdge) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service' && e.cls !== 'tram';
+    const flt = tram ? (e: GEdge) => e.cls === 'tram' : (e: GEdge) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service' && e.cls !== 'tram' && e.cls !== 'metro';
     const near = this.world.graph.nearest(px + Math.cos(ang) * d, pz + Math.sin(ang) * d, 120, flt);
     if (!near) return;
     const e = near.e;

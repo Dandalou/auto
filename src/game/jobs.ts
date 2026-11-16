@@ -18,6 +18,8 @@ export interface JobCtx {
   notify(msg: string, kind?: 'ok' | 'warn' | 'info'): void;
   chime(): void;
   clock: number; // reálné sekundy od začátku
+  /** Výška, na které stojí cestující (např. nástupiště metra). */
+  yAt?: (x: number, z: number) => number;
 }
 
 export interface Waypoint {
@@ -84,7 +86,7 @@ export interface PlannedLine {
   /** Skutečný jízdní řád (s od první zastávky), u linek PID. */
   times?: number[];
   headsign?: string;
-  mode?: 'bus' | 'tram';
+  mode?: 'bus' | 'tram' | 'metro';
 }
 
 /** Naplánuje linku ze skutečných zastávek v okolí bodu. */
@@ -180,6 +182,7 @@ export class BusJob extends Job {
     super();
     const last = line.stops[line.stops.length - 1].name;
     if (line.mode === 'tram') this.vehicle = ['tramvaj'];
+    if (line.mode === 'metro') this.vehicle = ['metro'];
     this.title = line.headsign
       ? `Linka ${line.number} (PID) směr ${line.headsign}: ${line.stops[0].name} → ${last}`
       : `Linka ${line.number}: ${line.stops[0].name} → ${last}`;
@@ -241,7 +244,7 @@ export class BusJob extends Job {
         tz = tz + (dz - tz) * k;
         p.t += dt;
       }
-      const y = w.groundHeight(tx, tz, 9999);
+      const y = ctx.yAt ? ctx.yAt(tx, tz) : w.groundHeight(tx, tz, 9999);
       w.toScene(tx, tz, p.mesh.position, Number.isNaN(y) ? 0 : y);
     }
   }
@@ -272,12 +275,12 @@ export class BusJob extends Job {
     const doorZ = v.z + fz * (v.spec.length / 2 - 1.2);
     const dist = Math.min(Math.hypot(doorX - s.x, doorZ - s.z), Math.hypot(v.x - s.x, v.z - s.z));
     if (this.stopState === 'drive') {
-      if (dist < 28 && v.speed < 0.6) {
+      if (dist < Math.max(28, v.spec.length / 2 + 6) && v.speed < 0.6) {
         this.stopState = 'arrived';
         ctx.notify(`Zastávka ${s.name}: otevřete dveře (O)`, 'info');
       }
     } else if (this.stopState === 'arrived') {
-      if (dist > 35) this.stopState = 'drive';
+      if (dist > Math.max(35, v.spec.length / 2 + 12)) this.stopState = 'drive';
       if (v.doorsOpen) {
         this.stopState = 'boarding';
         this.boardT = 0;
@@ -558,7 +561,7 @@ export class DeliveryJob extends Job {
 // --------------------------------------------------------------- nabídky
 
 export interface Offer {
-  kind: 'bus' | 'taxi' | 'delivery' | 'tram';
+  kind: 'bus' | 'taxi' | 'delivery' | 'tram' | 'metro';
   title: string;
   detail: string;
   estPay: number;
@@ -571,6 +574,17 @@ function addressWithStreet(world: World, p: NamedPoint): NamedPoint & { street: 
 
 export function generateOffers(world: World, x: number, z: number): Offer[] {
   const offers: Offer[] = [];
+  // Metro: skutečné linky A, B, C z PID.
+  for (const line of planPidLines(world, x, z, 2, 'metro')) {
+    const km = line.legLen.reduce((a, b) => a + b, 0) / 1000;
+    offers.push({
+      kind: 'metro',
+      title: `🚇 ${line.number} → ${line.headsign}: ${line.stops[0].name} → ${line.stops[line.stops.length - 1].name}`,
+      detail: `metro · ${line.stops.length} stanic · ${km.toFixed(1)} km · pod zemí`,
+      estPay: Math.round((line.stops.length * 320 + km * 180 + 150) * 1.2),
+      make: (ctx) => new BusJob(line, ctx),
+    });
+  }
   // Tramvaje: skutečné linky PID, jinde linky z tramvajových zastávek OSM.
   const trams = planPidLines(world, x, z, 2, 'tram');
   if (!trams.length) {

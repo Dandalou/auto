@@ -55,15 +55,16 @@ export interface PidPlan extends PlannedLine {
 }
 
 /** Úsek skutečné linky PID začínající u zastávky blízko hráče. */
-export function planPidLines(world: World, x: number, z: number, max = 3, mode: 'bus' | 'tram' = 'bus'): PidPlan[] {
+export function planPidLines(world: World, x: number, z: number, max = 3, mode: 'bus' | 'tram' | 'metro' = 'bus'): PidPlan[] {
   if (!data || !stopXZ) return [];
   const cands: { line: PidLine; dir: PidDir; start: number; d: number }[] = [];
   for (const line of data.lines) {
     if (line.night) continue;
-    if ((line.t === 0) !== (mode === 'tram')) continue;
+    const lt = line.t === 0 ? 'tram' : line.t === 1 ? 'metro' : 'bus';
+    if (lt !== mode) continue;
     for (const dir of line.d) {
       let best = -1;
-      let bd = 1500;
+      let bd = mode === 'metro' ? 2500 : 1500;
       for (let k = 0; k < dir.s.length - 3; k++) {
         const si = dir.s[k];
         const d = Math.hypot(stopXZ[si * 2] - x, stopXZ[si * 2 + 1] - z);

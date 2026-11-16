@@ -22,12 +22,13 @@ import { loadPid } from './pid';
 import { Signals } from './signals';
 import { Grass } from '../world/grass';
 import { Skidmarks } from './skidmarks';
+import { MetroTunnel } from './metro';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
 
 const VEHICLE_COLORS: Record<VehicleType, number> = {
-  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xd8342c, meziměstský: 0x2f78c4, kamion: 0x3a6b3a, tramvaj: 0xd8342c,
+  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xd8342c, meziměstský: 0x2f78c4, kamion: 0x3a6b3a, tramvaj: 0xd8342c, metro: 0xc9ccd1,
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -245,7 +246,7 @@ export class Game {
 
   /** Najde nejbližší silnici a postaví na ni vozidlo po směru jízdy. */
   snapToRoad(x: number, z: number): { x: number; z: number; heading: number } | null {
-    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway' && e.cls !== 'tram';
+    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway' && e.cls !== 'tram' && e.cls !== 'metro';
     const n = this.world.graph.nearest(x, z, 400, flt) ?? this.world.graph.nearest(x, z, 1500, flt);
     if (!n) return null;
     const e = n.e;
@@ -288,8 +289,17 @@ export class Game {
     return this.walking ? this.walker.z : this.vehicle.z;
   }
 
+  /** Vozidlo jede po kolejích (tramvaj, metro). */
+  isRail(): boolean {
+    return this.vehicle.spec.type === 'tramvaj' || this.vehicle.spec.type === 'metro';
+  }
+
   toggleWalk() {
     const v = this.vehicle;
+    if (this.metro) {
+      this.notify('V tunelu metra vystoupit nelze.', 'warn');
+      return;
+    }
     if (!this.walking) {
       if (v.speed > 2) {
         this.notify('Nejdřív zastavte.', 'warn');
@@ -383,9 +393,14 @@ export class Game {
     this.navT = 0;
     if (job instanceof BusJob) updateSign(this.model, job.line.number, job.line.stops[job.line.stops.length - 1].name);
     // Tramvaj jede po kolejích celé trasy linky.
-    if (job instanceof BusJob && job.line.mode === 'tram') {
+    if (job instanceof BusJob && (job.line.mode === 'tram' || job.line.mode === 'metro')) {
       let path: [number, number][] = [];
       for (const l of job.line.legs) path = path.concat(path.length ? l.slice(1) : l);
+      if (job.line.mode === 'metro') {
+        this.metro = new MetroTunnel(this.world, path, job.line.stops);
+        this.scene.add(this.metro.group);
+        this.state.settings.camera = 1;
+      }
       this.setTramPath(path);
     } else this.tramPath = null;
   }
@@ -395,7 +410,7 @@ export class Game {
     this.tramPath = path;
     this.tramCum = [0];
     for (let i = 1; i < path.length; i++) this.tramCum.push(this.tramCum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
-    this.tramS = Math.min(this.vehicle.spec.length * 0.55, this.tramCum[this.tramCum.length - 1]);
+    this.tramS = Math.min(this.vehicle.spec.length + 2, this.tramCum[this.tramCum.length - 1]);
     this.placeTram(0);
   }
 
@@ -430,6 +445,13 @@ export class Game {
     v.heading = h;
     v.x = (f[0] + r[0]) / 2;
     v.z = (f[1] + r[1]) / 2;
+    if (this.metro) {
+      const yf = this.metro.yAtS(this.tramS), yr = this.metro.yAtS(this.tramS - L);
+      v.y = (yf + yr) / 2;
+      v.pitch = Math.atan2(yf - yr, L);
+      v.roll = 0;
+      return;
+    }
     const g = this.world.groundHeight(v.x, v.z, v.y + 1);
     if (!Number.isNaN(g)) v.y = g;
   }
@@ -450,12 +472,20 @@ export class Game {
     v.rpm = 600 + v.vF * 90;
     v.gear = 1;
     v.odometer += v.vF * dt;
-    v.onRoad = 'tram';
+    v.onRoad = v.spec.type === 'metro' ? 'metro' : 'tram';
+  }
+
+  private endMetro() {
+    if (!this.metro) return;
+    this.metro.dispose();
+    this.metro = null;
+    this.state.settings.camera = 0;
   }
 
   cancelJob() {
     if (!this.job) return;
     this.tramPath = null;
+    this.endMetro();
     this.job.dispose();
     this.job = null;
     this.navPts = null;
@@ -478,6 +508,7 @@ export class Game {
       notify: (m, k) => this.notify(m, k),
       chime: () => this.audio.chime(),
       clock: this.clock,
+      yAt: this.metro ? (x: number, z: number) => this.metro!.platformY(x, z) : undefined,
     };
   }
 
@@ -533,6 +564,8 @@ export class Game {
       this.pedestrians.update(dt, this.px, this.pz, this.walking ? null : this.vehicle);
       this.signals.update(dt, this.px, this.pz);
       this.grass.update(dt, this.px, this.pz, this.env.season);
+      this.metro?.update();
+      this.env.underground = !!this.metro;
       this.placeT -= dt;
       if (this.placeT <= 0) {
         this.placeT = 1;
@@ -587,6 +620,8 @@ export class Game {
   private tramPath: [number, number][] | null = null;
   private tramCum: number[] = [];
   private tramS = 0;
+  /** Tunel metra během práce v metru. */
+  metro: MetroTunnel | null = null;
   /** Palivo 0..1. */
   fuel = 1;
   /** Stav vozidla 0..1. */
@@ -599,7 +634,7 @@ export class Game {
     if (!cls || cls === 'path') return null;
     const lim = SPEED_LIMIT[cls];
     if (!lim) return null;
-    if (this.urban && cls !== 'motorway' && cls !== 'trunk') return Math.min(lim, 50);
+    if (this.urban && cls !== 'motorway' && cls !== 'trunk' && cls !== 'metro') return Math.min(lim, 50);
     return lim;
   }
 
@@ -719,7 +754,7 @@ export class Game {
     }
     if (i.hit('KeyT') && !this.walking) this.refuel();
     this.audio.horn(!inPanel && !this.walking && i.down('KeyQ'));
-    if (i.hit('KeyR') && this.vehicle.spec.type === 'tramvaj' && this.tramPath && !this.walking) {
+    if (i.hit('KeyR') && this.isRail() && this.tramPath && !this.walking) {
       this.placeTram(0);
     } else if (i.hit('KeyR')) {
       const p = this.snapToRoad(this.px, this.pz);
@@ -750,7 +785,7 @@ export class Game {
       if (this.condition < 0.5) ax.throttle *= 0.5 + this.condition;
     }
     const obstacles = [...this.traffic.obstacles(), ...this.pedestrians.obstacles()].filter((o) => Math.hypot(o.x - v.x, o.z - v.z) < 30);
-    if (v.spec.type === 'tramvaj' && this.tramPath) this.updateTram(dt, ax);
+    if (this.isRail() && this.tramPath) this.updateTram(dt, ax);
     else {
       v.update(dt, ax, this.world, this.env.grip(), obstacles);
       v.updateAttitude(this.world, dt);
@@ -805,7 +840,8 @@ export class Game {
     this.audio.update(v.rpm, ax.throttle, v.speed, v.spec.mass > 5000, this.env.weather === 'déšť', true);
     this.audio.squeal(v.airborne || v.speed < 3 ? 0 : Math.max(0, v.slip - 0.35) * 1.4);
     this.walker.mesh.visible = false;
-    m.root.visible = this.state.settings.camera !== 1 || v.spec.mass > 5000;
+    // Z kabiny: osobní auto skryté; kolejová vozidla také (kamera je za čelním sklem modelu).
+    m.root.visible = !(this.state.settings.camera === 1 || this.metro) || (v.spec.mass > 5000 && !this.isRail());
   }
 
   private updateWalker(dt: number, inPanel: boolean) {
@@ -873,7 +909,7 @@ export class Game {
     const fx = Math.sin(yaw), fz = -Math.cos(yaw);
     let desired: THREE.Vector3;
     let look: THREE.Vector3;
-    if (mode === 1 && !this.walking) {
+    if ((mode === 1 || this.metro) && !this.walking) {
       // Pohled z místa řidiče.
       const s = v.spec;
       const along = s.mass > 5000 ? s.length / 2 - 1.1 : 0.2;
@@ -884,7 +920,12 @@ export class Game {
       desired.y += up;
       desired.x = target.x + hf * along + (-hz) * side;
       desired.z = target.z + hz * along + hf * side;
-      look = desired.clone().add(new THREE.Vector3(fx * 30, -2 - v.pitch * 30, fz * 30));
+      // Na kolejích: výška kabiny podle trati (vlak je dlouhý a trať se svažuje).
+      if (this.isRail() && this.tramPath) {
+        const yf = this.metro ? this.metro.yAtS(this.tramS - 1.1) : v.y + Math.sin(v.pitch) * along;
+        desired.y = yf + up;
+      }
+      look = desired.clone().add(new THREE.Vector3(fx * 30, -2 + Math.tan(v.pitch) * 30, fz * 30));
       this.camera.position.copy(desired);
       this.camera.lookAt(look);
       this.camera.fov = 70;
@@ -981,10 +1022,18 @@ export class Game {
         this.navT = 3;
         this.navMeshDirty = false;
         this.navTarget = { x: t.x, z: t.z };
-        const profile = this.walking ? 'walk' : this.vehicle.spec.mass > 5000 ? 'bus' : 'car';
-        const r = this.world.graph.route(this.px, this.pz, t.x, t.z, profile, 40000);
-        this.navPts = r ? r.pts : null;
-        this.setNavMesh(this.navPts);
+        if (this.isRail() && this.tramPath && !this.walking) {
+          // Kolejová vozidla: navigace = zbytek trasy linky.
+          let k = 0;
+          while (k < this.tramCum.length - 1 && this.tramCum[k] < this.tramS) k++;
+          this.navPts = this.tramPath.slice(Math.max(0, k - 1));
+          this.setNavMesh(this.metro ? null : this.navPts);
+        } else {
+          const profile = this.walking ? 'walk' : this.vehicle.spec.mass > 5000 ? 'bus' : 'car';
+          const r = this.world.graph.route(this.px, this.pz, t.x, t.z, profile, 40000);
+          this.navPts = r ? r.pts : null;
+          this.setNavMesh(this.navPts);
+        }
       }
     } else this.marker.visible = false;
     if (job.done) {
@@ -1006,6 +1055,8 @@ export class Game {
       this.marker.visible = false;
       $('job').classList.add('hidden');
       this.audio.chime();
+      this.endMetro();
+      this.tramPath = null;
       if (rental) {
         this.setVehicle(this.state.garage.includes(this.state.vehicle) ? this.state.vehicle : this.state.garage[0] ?? 'auto');
         this.rental = false;
