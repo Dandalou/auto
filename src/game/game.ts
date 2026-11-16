@@ -603,6 +603,8 @@ export class Game {
     for (const m of this.world.signMats) m.emissiveIntensity = 0.15 + this.env.night * 1.1;
     this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
+    this.world.mats.pool.opacity = Math.min(0.3, Math.max(0, this.env.night - 0.35) * 0.5);
+    this.world.mats.pool.visible = this.env.night > 0.35;
     this.world.setSeason(this.env.season);
     this.adaptPerformance(dt);
     this.updateRealWorld(dt);

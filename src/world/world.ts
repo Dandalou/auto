@@ -329,9 +329,11 @@ export class World {
     sign: THREE.MeshStandardMaterial;
     lamp: THREE.MeshStandardMaterial;
     glow: THREE.PointsMaterial;
+    pool: THREE.MeshBasicMaterial;
   };
   season = 'léto';
   private lampGeo = lampGeometry();
+  private poolGeo = new THREE.PlaneGeometry(12, 12).rotateX(-Math.PI / 2);
   private treeMeshes = new Set<THREE.InstancedMesh>();
   signMats = new Set<THREE.MeshStandardMaterial>();
   private treeGeo = treeGeometries();
@@ -411,12 +413,36 @@ export class World {
         });
       })(),
       lamp: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: new THREE.Color(1, 0.85, 0.5), emissiveIntensity: 0 }),
+      pool: new THREE.MeshBasicMaterial({
+        map: (() => {
+          const c = document.createElement('canvas');
+          c.width = c.height = 128;
+          const x = c.getContext('2d')!;
+          const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+          g.addColorStop(0, 'rgba(255,214,150,1)');
+          g.addColorStop(0.4, 'rgba(255,200,130,0.6)');
+          g.addColorStop(1, 'rgba(255,190,120,0)');
+          x.fillStyle = g;
+          x.fillRect(0, 0, 128, 128);
+          return new THREE.CanvasTexture(c);
+        })(),
+        transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+        polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -20, fog: true,
+      }),
       glow: new THREE.PointsMaterial({
         map: glowTexture(), size: 9, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false,
         blending: THREE.AdditiveBlending, fog: false,
       }),
     };
     addSnow(this.mats.roofs, false, 'roof');
+    // Svítí jen hlava lampy (světlá barva vrcholů), ne sloup.
+    this.mats.lamp.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= step(0.6, vColor.r);',
+      );
+    };
+    this.mats.lamp.customProgramCacheKey = () => 'lamp-head';
     addSnow(this.mats.tree, false, 'tree');
     const n = Math.min(4, Math.max(2, (navigator.hardwareConcurrency || 4) - 1));
     for (let i = 0; i < n; i++) {
@@ -766,8 +792,14 @@ export class World {
       gg.computeBoundingSphere();
       const pts = new THREE.Points(gg, this.mats.glow);
       pts.name = 'glow';
-      group.add(im, pts);
-      disposables.push({ dispose: () => im.dispose() }, gg);
+      // Světelné kužele na zemi pod lampami.
+      const pool = new THREE.InstancedMesh(this.poolGeo, this.mats.pool, n);
+      for (let i = 0; i < n; i++) pool.setMatrixAt(i, m.makeTranslation(l[i * 3], l[i * 3 + 1] + 0.4, l[i * 3 + 2]));
+      pool.computeBoundingSphere();
+      pool.name = 'pools';
+      pool.renderOrder = 3;
+      group.add(im, pts, pool);
+      disposables.push({ dispose: () => im.dispose() }, { dispose: () => pool.dispose() }, gg);
     }
     this.root.add(group);
     const tile: NearTile = {
