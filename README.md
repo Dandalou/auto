@@ -28,7 +28,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
   - 🚌 Řidič autobusu: v Praze a Středočeském kraji jezdíte **skutečné linky PID** se skutečným pořadím zastávek a jízdním řádem (GTFS). Jinde vznikají linky ze skutečných zastávek MHD z OSM. Patří k tomu otevírání dveří, nástup cestujících a hodnocení přesnosti a plynulosti.
   - 🚋 Řidič tramvaje: skutečné tramvajové linky PID, v Brně, Ostravě, Plzni, Olomouci a Liberci linky z tramvajových zastávek OSM. Tramvaj jede po skutečných kolejích, řídí se jen rozjezd, brzdění a dveře.
   - 🚇 Strojvedoucí metra: skutečné linky A, B, C z PID. Tunel vede po skutečné trase z OSM v hloubce pod terénem a ve stanicích má nástupiště a cedule.
-  - 🚛 Nákladní doprava: zakázky do jiného města 15–80 km daleko, odměna podle vzdálenosti a času.
+  - 🚛 Nákladní doprava: zakázky do jiného města 15–80 km daleko, odměna podle vzdálenosti a času, trasa po silnicích přes celou republiku (OSRM).
   - 🚕 Taxi: vyzvednutí a odvoz na skutečné adresy, taxametr a spropitné.
   - 📦 Rozvoz zásilek na adresy s časovým limitem.
 - **Management firmy:** založíte dopravní firmu, stavíte depa, kupujete autobusy, najímáte řidiče a zakládáte linky. Poptávka na lince se odvozuje z obestavěného prostoru budov kolem zastávek. Firma vydělává i ve chvíli, kdy jezdíte jinde, a její autobusy potkáte na silnici.
@@ -95,5 +95,6 @@ Při každém pushi do `main` GitHub Actions hru sestaví a nasadí na GitHub Pa
 - Výškopis mimo ČR: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
 - Vyhledávání [Nominatim](https://nominatim.org) (jen na vyžádání hráče).
 - Jízdní řády [PID GTFS](https://pid.cz/o-systemu/opendata/) (CC BY 4.0), zpracované skriptem `scripts/build-pid.mjs` při každém nasazení a jednou týdně.
+- Dálkové trasy nákladní dopravy: [OSRM](https://project-osrm.org) (data © přispěvatelé OpenStreetMap).
 - Aktuální počasí [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
 - Kód je pod licencí MIT (viz `LICENSE`).

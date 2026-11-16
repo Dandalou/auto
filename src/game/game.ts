@@ -13,7 +13,7 @@ import { SPEED_LIMIT } from '../world/roadgraph';
 import { AudioFx } from './audio';
 import { simulateHour } from './company';
 import { Input } from './input';
-import { BusJob, type Job, type JobCtx } from './jobs';
+import { BusJob, FreightJob, type Job, type JobCtx } from './jobs';
 import { buildPerson, buildVehicleModel, updateSign, type VehicleModel } from './models';
 import { defaultState, formatMoney, level, loadState, saveState, type SaveState } from './state';
 import { Traffic, LIGHT_GLOW, addLightGlow } from './traffic';
@@ -329,6 +329,41 @@ export class Game {
     this.camInit = false;
   }
 
+  /** Dálková trasa po silnicích z veřejného směrovače OSRM (data OSM). */
+  private async fetchLongRoute(job: FreightJob) {
+    const a = worldToLonLat(this.px, this.pz);
+    const b = worldToLonLat(job.dest.x, job.dest.z);
+    try {
+      const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lon.toFixed(5)},${a.lat.toFixed(5)};${b.lon.toFixed(5)},${b.lat.toFixed(5)}?overview=full&geometries=geojson`);
+      const j = (await r.json()) as { routes?: { distance: number; geometry: { coordinates: [number, number][] } }[] };
+      const route = j.routes?.[0];
+      if (!route || this.job !== job) return;
+      job.longRoute = route.geometry.coordinates.map(([lon, lat]) => {
+        const p = lonLatToWorld(lon, lat);
+        return [p.x, p.z] as [number, number];
+      });
+      job.km = route.distance / 1000;
+      this.navT = 0;
+    } catch {
+      /* bez dálkové trasy zůstane ukazatel na minimapě */
+    }
+  }
+
+  /** Zbytek dálkové trasy od bodu nejblíž hráči. */
+  private longRouteFrom(job: Job): [number, number][] | null {
+    if (!(job instanceof FreightJob) || !job.longRoute) return null;
+    const p = job.longRoute;
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < p.length; i++) {
+      const d = Math.hypot(p[i][0] - this.px, p[i][1] - this.pz);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    }
+    return [[this.px, this.pz], ...p.slice(bi)];
+  }
+
   /** Nejbližší čerpací stanice v dosahu (30 m). */
   nearFuel(): { name: string; d: number } | null {
     let best: { name: string; d: number } | null = null;
@@ -394,6 +429,7 @@ export class Game {
   startJob(job: Job) {
     this.cancelJob();
     this.job = job;
+    if (job instanceof FreightJob) void this.fetchLongRoute(job);
     this.navPts = null;
     this.navTarget = null;
     this.navT = 0;
@@ -1073,7 +1109,7 @@ export class Game {
         } else {
           const profile = this.walking ? 'walk' : this.vehicle.spec.mass > 5000 ? 'bus' : 'car';
           const r = this.world.graph.route(this.px, this.pz, t.x, t.z, profile, 40000);
-          this.navPts = r ? r.pts : null;
+          this.navPts = r ? r.pts : this.longRouteFrom(job);
           this.setNavMesh(this.navPts);
         }
       }
@@ -1296,7 +1332,7 @@ export class Game {
         hint = this.job.actionLabel(this.jobCtx()) ?? '';
       }
       if (!hint && !this.walking && v.speed < 1 && !this.rental && this.fuel < 0.97 && this.nearFuel()) hint = `T – natankovat (${this.nearFuel()!.name})`;
-      if (!hint && !this.walking && v.speed < 0.5 && v.spec.mass > 5000) hint = v.doorsOpen ? 'O – zavřít dveře' : 'O – otevřít dveře';
+      if (!hint && !this.walking && v.speed < 0.5 && v.spec.mass > 5000 && v.spec.type !== 'kamion') hint = v.doorsOpen ? 'O – zavřít dveře' : 'O – otevřít dveře';
       if (!hint && !this.walking && this.world.graph.version > 0 && !v.onRoad && v.speed < 1 && this.clock > 5) hint = 'R – zpět na silnici';
     }
     $('hint').textContent = hint;

@@ -568,6 +568,8 @@ export class FreightJob extends Job {
   start = -1;
   holdT = 0;
   km: number;
+  /** Trasa po silnicích přes celou republiku (OSRM), světové souřadnice. */
+  longRoute: [number, number][] | null = null;
 
   constructor(public dest: { name: string; x: number; z: number }, public cargo: string, fromX: number, fromZ: number) {
     super();
@@ -615,7 +617,7 @@ export class FreightJob extends Job {
     return `<b>${escapeHtml(this.title)}</b><br>
       ${wrong ? '<span class="warn">Potřebujete nákladní auto nebo dodávku</span><br>' : ''}
       Zbývá ${(d / 1000).toFixed(1)} km vzdušnou čarou · na cestě ${fmtTime(time)}<br>
-      <span class="muted">Navigace se zobrazí, až bude cíl v načteném okolí – zatím jeďte po ukazateli na minimapě. Zastavte v cíli (do 350 m).</span>`;
+      <span class="muted">${this.longRoute ? `Trasa ${this.km.toFixed(0)} km po silnicích je na minimapě.` : 'Hledám trasu…'} Zastavte v cíli (do 350 m).</span>`;
   }
 }
 
