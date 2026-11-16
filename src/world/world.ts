@@ -159,6 +159,38 @@ ${vegetation ? `if (isWater > 0.5) {
   mat.customProgramCacheKey = () => `snow-${key}`;
 }
 
+function glassify(mat: THREE.MeshStandardMaterial) {
+  const src = mat.map?.image as HTMLCanvasElement | undefined;
+  if (!src || !src.getContext) return;
+  const w = src.width, h = src.height;
+  const data = src.getContext('2d')!.getImageData(0, 0, w, h).data;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  const out = ctx.createImageData(w, h);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const lum = (r + g + b) / 3;
+    // Sklo: tmavé a do modra.
+    const glass = lum < 130 && b >= r - 4 && b > 45;
+    // G = drsnost, B = kovovost (konvence three.js).
+    out.data[i] = 0;
+    out.data[i + 1] = glass ? 30 : 235;
+    out.data[i + 2] = glass ? 150 : 0;
+    out.data[i + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  mat.roughnessMap = t;
+  mat.metalnessMap = t;
+  mat.roughness = 1;
+  mat.metalness = 1;
+  mat.envMapIntensity = 6;
+  mat.needsUpdate = true;
+}
+
 function geometry(m: MeshArrays): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(m.pos, 3));
@@ -435,6 +467,8 @@ export class World {
       }),
     };
     addSnow(this.mats.roofs, false, 'roof');
+    // Okna jako sklo: z textury fasády odvodit mapu drsnosti a kovovosti (sklo lesklé, zeď matná).
+    for (const m of [this.mats.walls, this.mats.panel, this.mats.house, this.mats.shop, ...Object.values(this.mats.facade)]) glassify(m);
     // Svítí jen hlava lampy (světlá barva vrcholů), ne sloup.
     this.mats.lamp.onBeforeCompile = (sh) => {
       sh.fragmentShader = sh.fragmentShader.replace(
