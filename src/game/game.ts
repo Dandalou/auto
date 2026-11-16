@@ -27,6 +27,77 @@ import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
 
+/** Jednoduchý interiér: palubní deska, volant, tachometr, sloupky skla. Souřadnice kamery. */
+function buildCockpit(): THREE.Group {
+  const g = new THREE.Group();
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1f2124, roughness: 0.8 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6 });
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.35, 0.7), dark);
+  dash.position.set(0.25, -0.62, -0.95);
+  dash.rotation.x = -0.15;
+  g.add(dash);
+  // Volant.
+  const wheel = new THREE.Group();
+  wheel.name = 'wheel';
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.022, 8, 28), trim);
+  const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.03, 0.02), trim);
+  const spoke2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.17, 0.02), trim);
+  spoke2.position.y = -0.09;
+  wheel.add(rim, spoke, spoke2);
+  wheel.position.set(0, -0.42, -0.62);
+  wheel.rotation.x = -0.35;
+  g.add(wheel);
+  // Tachometr s ručičkou.
+  const dialTex = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const x = cv.getContext('2d')!;
+    x.fillStyle = '#0d0e10';
+    x.beginPath();
+    x.arc(64, 64, 62, 0, Math.PI * 2);
+    x.fill();
+    x.strokeStyle = '#d9dde3';
+    x.lineWidth = 3;
+    for (let i = 0; i <= 10; i++) {
+      const a = Math.PI * 0.75 + (i / 10) * Math.PI * 1.5;
+      x.beginPath();
+      x.moveTo(64 + Math.cos(a) * 46, 64 + Math.sin(a) * 46);
+      x.lineTo(64 + Math.cos(a) * 56, 64 + Math.sin(a) * 56);
+      x.stroke();
+    }
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const dial = new THREE.Mesh(new THREE.CircleGeometry(0.07, 24), new THREE.MeshBasicMaterial({ map: dialTex }));
+  dial.position.set(0, -0.39, -0.78);
+  dial.rotation.x = -0.35;
+  const needle = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.055, 0.003), new THREE.MeshBasicMaterial({ color: 0xff5533 }));
+  needle.geometry.translate(0, 0.0275, 0);
+  needle.name = 'needle';
+  needle.position.set(0, -0.389, -0.777);
+  needle.rotation.x = -0.35;
+  g.add(dial, needle);
+  // Sloupky čelního skla.
+  const pillars = new THREE.Group();
+  pillars.name = 'pillars';
+  for (const [x, r] of [[-0.62, 0.35], [1.05, -0.35]] as [number, number][]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.2, 0.07), dark);
+    p.position.set(x, 0.05, -0.85);
+    p.rotation.z = r;
+    pillars.add(p);
+  }
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 0.5), dark);
+  roof.position.set(0.2, 0.52, -0.6);
+  pillars.add(roof);
+  g.add(pillars);
+  g.traverse((o) => {
+    o.renderOrder = 10;
+    o.frustumCulled = false;
+  });
+  return g;
+}
+
 const VEHICLE_COLORS: Record<VehicleType, number> = {
   auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xd8342c, meziměstský: 0x2f78c4, kamion: 0x3a6b3a, tramvaj: 0xd8342c, metro: 0xc9ccd1,
 };
@@ -123,6 +194,11 @@ export class Game {
     );
     this.marker.visible = false;
     this.scene.add(this.marker);
+    // Palubní deska pro pohled z kabiny (připojená ke kameře).
+    this.scene.add(this.camera);
+    this.cockpit = buildCockpit();
+    this.cockpit.visible = false;
+    this.camera.add(this.cockpit);
     this.fuel = this.state.fuel ?? 1;
     this.condition = this.state.condition ?? 1;
     this.vehicle.x = this.state.pos.x;
@@ -327,6 +403,22 @@ export class Game {
       this.walking = false;
     }
     this.camInit = false;
+  }
+
+  private updateCockpit(on: boolean) {
+    const c = this.cockpit;
+    const v = this.vehicle;
+    const big = v.spec.mass > 5000;
+    c.visible = on && !this.walking;
+    if (!c.visible) return;
+    const wheel = c.getObjectByName('wheel')!;
+    wheel.rotation.z = -v.steer * 7;
+    // Autobus a tramvaj: volant víc vlevo a plošší; metro bez volantu.
+    wheel.visible = v.spec.type !== 'metro' && v.spec.type !== 'tramvaj';
+    c.getObjectByName('pillars')!.visible = !big;
+    c.position.set(big ? 0.05 : 0, big ? -0.08 : 0, 0);
+    const speedo = c.getObjectByName('needle');
+    if (speedo) speedo.rotation.z = 2.2 - Math.min(1, Math.abs(v.vF) / 55) * 4.4;
   }
 
   /** Dálková trasa po silnicích z veřejného směrovače OSRM (data OSM). */
@@ -670,6 +762,7 @@ export class Game {
   private speedT = 0;
   private redNode: unknown = null;
   private introT = 0;
+  private cockpit!: THREE.Group;
   private compiling = false;
   private shadersReady = false;
   /** Trasa tramvaje (x, z) a kumulativní délky. */
@@ -1008,8 +1101,10 @@ export class Game {
       this.camera.lookAt(look);
       this.camera.fov = 70;
       this.camera.updateProjectionMatrix();
+      this.updateCockpit(true);
       return;
     }
+    this.updateCockpit(false);
     const base = (this.walking ? 4.5 : Math.max(7, v.spec.length * 1.25)) * (this.camera.aspect < 1 ? 1.5 : 1);
     const dist = base * this.camDist * (mode === 2 ? 3.2 : 1) * (this.walking ? 1 : 1 + Math.min(0.25, v.speed * 0.006));
     const pitch = mode === 2 ? Math.max(this.camPitch, 0.7) : this.camPitch;
