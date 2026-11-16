@@ -23,6 +23,8 @@ export interface GEdge {
   back: boolean;
   tile: string;
   width: number;
+  /** Úsek vede tunelem (na povrchu po něm nejde jezdit ani stát). */
+  tunnel?: boolean;
   /** Leží v zastavěném území (počítá se líně). */
   urban?: boolean;
 }
@@ -104,7 +106,7 @@ export class RoadGraph {
           const len = Math.hypot(nd.x - prev.x, nd.z - prev.z);
           const e: GEdge = {
             a: prev, b: nd, len, cls: l.cls, fwd: l.oneway !== -1, back: l.oneway !== 1, tile: key,
-            width: (ROAD_HALF_WIDTH[l.cls] ?? 2) * 2,
+            width: (ROAD_HALF_WIDTH[l.cls] ?? 2) * 2, tunnel: l.tunnel,
           };
           prev.out.push(e);
           nd.inn.push(e);

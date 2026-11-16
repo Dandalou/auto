@@ -2,7 +2,7 @@
 // odpovídá na dotazy na výšku terénu, kolize a silnice.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TILE_M, tileKey } from '../geo';
 import { gridHeight, type HeightGrid } from './heightgrid';
 import { RoadGraph } from './roadgraph';
@@ -251,20 +251,44 @@ function treeGeometries(): THREE.BufferGeometry[] {
     return g;
   };
   const trunk = (h: number, r: number) => colorize(new THREE.CylinderGeometry(r * 0.7, r, h, 5).translate(0, h / 2, 0), [0.32, 0.22, 0.15]);
-  const merge = (gs: THREE.BufferGeometry[]) => {
-    const m = mergeGeometries(gs.map((g) => (g.index ? g.toNonIndexed() : g)))!;
+  // Hladké normály každé části zvlášť (koruny působí oble, ne hranatě).
+  const smooth = (g: THREE.BufferGeometry) => {
+    const m = mergeVertices(g.index ? g.toNonIndexed() : g, 1e-3);
     m.computeVertexNormals();
-    return m;
+    return m.toNonIndexed();
+  };
+  const merge = (gs: THREE.BufferGeometry[]) => mergeGeometries(gs.map((g) => (g.index ? g.toNonIndexed() : g)))!;
+  // Nepravidelný lalok koruny: rozkmitané vrcholy.
+  const lobe = (r: number, x: number, y: number, z: number, seed: number) => {
+    const g = new THREE.IcosahedronGeometry(r, 1);
+    g.deleteAttribute('uv');
+    const m = mergeVertices(g, 1e-3);
+    const p = m.getAttribute('position');
+    for (let i = 0; i < p.count; i++) {
+      const k = 1 + 0.16 * Math.sin(p.getX(i) * 3.1 + seed) * Math.cos(p.getZ(i) * 2.7 + seed * 1.7) + 0.08 * Math.sin(p.getY(i) * 4.3 + seed);
+      p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.88, p.getZ(i) * k);
+    }
+    m.computeVertexNormals();
+    const out = m.toNonIndexed().translate(x, y, z);
+    return colorize(out, W);
+  };
+  const cone = (r: number, h: number, y: number) => {
+    const g = new THREE.ConeGeometry(r, h, 8, 1, true).translate(0, y, 0);
+    return colorize(smooth(g), W);
   };
   const conifer = merge([
-    trunk(2.2, 0.16),
-    shade(colorize(new THREE.ConeGeometry(2.3, 5.2, 6).translate(0, 4.2, 0), W), 1.6, 9.9),
-    shade(colorize(new THREE.ConeGeometry(1.6, 4.6, 6).translate(0, 7.6, 0), W), 1.6, 9.9),
+    smooth(trunk(2.2, 0.16)),
+    shade(cone(2.4, 4.4, 3.9), 1.6, 10.4),
+    shade(cone(1.9, 4.0, 6.3), 1.6, 10.4),
+    shade(cone(1.3, 3.4, 8.7), 1.6, 10.4),
   ]);
-  const crown = new THREE.IcosahedronGeometry(2.9, 0);
-  crown.scale(1, 0.9, 1);
-  const deciduous = merge([trunk(3.2, 0.17), shade(colorize(crown.translate(0, 5.6, 0), W), 3.2, 8.2)]);
-  const bush = merge([shade(colorize(new THREE.IcosahedronGeometry(1.0, 0).scale(1.2, 0.8, 1.2).translate(0, 0.6, 0), W), -0.2, 1.4)]);
+  const deciduous = merge([
+    smooth(trunk(3.2, 0.17)),
+    shade(lobe(2.7, 0, 5.5, 0, 1), 3.0, 8.6),
+    shade(lobe(1.9, 1.3, 6.6, 0.7, 2), 3.0, 8.6),
+    shade(lobe(1.8, -1.2, 6.2, -0.9, 3), 3.0, 8.6),
+  ]);
+  const bush = merge([shade(lobe(1.0, 0, 0.6, 0, 4), -0.2, 1.4)]);
   return [conifer, deciduous, bush];
 }
 
@@ -407,7 +431,7 @@ export class World {
       path: roadMat(pathTexture(), 'path', 1),
       rail: roadMat(railTexture(), 'rail', 1),
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
-      tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
+      tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }),
       walk: roadMat(sidewalkTexture(), 'walk', 2),
       zebra: (() => {
         const m = roadMat(zebraTexture(), 'zebra', 4);

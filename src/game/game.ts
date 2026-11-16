@@ -250,7 +250,7 @@ export class Game {
 
   /** Najde nejbližší silnici a postaví na ni vozidlo po směru jízdy. */
   snapToRoad(x: number, z: number): { x: number; z: number; heading: number } | null {
-    const flt = (e: { cls: string }) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway' && e.cls !== 'tram' && e.cls !== 'metro';
+    const flt = (e: { cls: string; tunnel?: boolean }) => !e.tunnel && e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'motorway' && e.cls !== 'tram' && e.cls !== 'metro';
     const n = this.world.graph.nearest(x, z, 400, flt) ?? this.world.graph.nearest(x, z, 1500, flt);
     if (!n) return null;
     const e = n.e;
