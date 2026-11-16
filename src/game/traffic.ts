@@ -39,6 +39,7 @@ export class Traffic {
   max = 28;
   enabled = true;
   private spawnT = 0;
+  private tramT = 0;
   private lineCars = new Map<string, AICar>();
   signals: Signals | null = null;
 
@@ -48,23 +49,26 @@ export class Traffic {
     return c.forward ? c.edge!.b : c.edge!.a;
   }
 
-  private canUse(e: GEdge, fromNode: GNode): boolean {
-    if (e.cls === 'path' || e.cls === 'track' || e.cls === 'tram') return false;
+  private canUse(e: GEdge, fromNode: GNode, tram = false): boolean {
+    if (tram !== (e.cls === 'tram')) return false;
+    if (e.cls === 'path' || e.cls === 'track') return false;
     return e.a === fromNode ? e.fwd : e.back;
   }
 
-  private spawn(px: number, pz: number) {
+  private spawn(px: number, pz: number, tram = false) {
     const ang = Math.random() * Math.PI * 2;
     const d = 180 + Math.random() * 450;
-    const near = this.world.graph.nearest(px + Math.cos(ang) * d, pz + Math.sin(ang) * d, 120, (e) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service' && e.cls !== 'tram');
+    const flt = tram ? (e: GEdge) => e.cls === 'tram' : (e: GEdge) => e.cls !== 'path' && e.cls !== 'track' && e.cls !== 'service' && e.cls !== 'tram';
+    const near = this.world.graph.nearest(px + Math.cos(ang) * d, pz + Math.sin(ang) * d, 120, flt);
     if (!near) return;
     const e = near.e;
     const forward = e.fwd && (!e.back || Math.random() < 0.5);
     if (!forward && !e.back) return;
     const r = Math.random();
-    const type: VehicleType = r < 0.82 ? 'auto' : r < 0.9 ? 'dodávka' : r < 0.95 ? 'kamion' : 'taxi';
+    const type: VehicleType = tram ? 'tramvaj' : r < 0.82 ? 'auto' : r < 0.9 ? 'dodávka' : r < 0.95 ? 'kamion' : 'taxi';
     const spec = SPECS[type];
-    const model = buildVehicleModel(spec, type === 'taxi' ? 0xf3d23a : COLORS[Math.floor(Math.random() * COLORS.length)], false);
+    const model = buildVehicleModel(spec, tram ? 0xc8202a : type === 'taxi' ? 0xf3d23a : COLORS[Math.floor(Math.random() * COLORS.length)], false);
+    if (tram) updateSign(model, String(1 + Math.floor(Math.random() * 26)), '');
     this.group.add(model.root);
     const s = (forward ? near.t : 1 - near.t) * e.len;
     const car: AICar = {
@@ -73,7 +77,7 @@ export class Traffic {
     };
     this.place(car);
     // Nezačínat v kolizi s jiným autem.
-    if (this.cars.some((o) => Math.hypot(o.x - car.x, o.z - car.z) < 12)) {
+    if (this.cars.some((o) => Math.hypot(o.x - car.x, o.z - car.z) < (tram ? 40 : 12))) {
       this.remove(car);
       return;
     }
@@ -96,7 +100,7 @@ export class Traffic {
     const t = e.len > 0 ? c.s / e.len : 0;
     const dx = b.x - a.x, dz = b.z - a.z;
     const l = Math.hypot(dx, dz) || 1;
-    const twoWay = e.fwd && e.back;
+    const twoWay = e.fwd && e.back && e.cls !== 'tram';
     const off = twoWay ? (ROAD_HALF_WIDTH[e.cls] ?? 2.5) * 0.5 : 0;
     // Vpravo od směru jízdy (Z na jih): (−dz, dx).
     c.x = a.x + dx * t + (-dz / l) * off;
@@ -113,7 +117,7 @@ export class Traffic {
     const opts: GEdge[] = [];
     for (const e of [...node.out, ...node.inn]) {
       if (e === c.edge) continue;
-      if (this.canUse(e, node)) opts.push(e);
+      if (this.canUse(e, node, c.spec.type === 'tramvaj')) opts.push(e);
     }
     if (!opts.length) return false;
     // Preferovat pokračování rovně a vyšší třídu.
@@ -163,11 +167,17 @@ export class Traffic {
       return;
     }
     this.spawnT -= dt;
-    const netCars = this.cars.filter((c) => !c.line).length;
+    const netCars = this.cars.filter((c) => !c.line && c.spec.type !== 'tramvaj').length;
     if (this.spawnT <= 0 && netCars < this.max) {
       this.spawnT = 0.25;
       const n = netCars < this.max / 2 ? 5 : 1;
       for (let i = 0; i < n; i++) this.spawn(px, pz);
+    }
+    // Tramvaje mají vlastní limit, aby je auta nevytlačila.
+    this.tramT -= dt;
+    if (this.tramT <= 0) {
+      this.tramT = 1;
+      if (this.cars.filter((c) => c.spec.type === 'tramvaj').length < 4) this.spawn(px, pz, true);
     }
     this.updateLineCars(px, pz, lines);
     for (const c of [...this.cars]) {
