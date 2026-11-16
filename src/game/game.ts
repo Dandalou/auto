@@ -170,7 +170,11 @@ export class Game {
   applySettings() {
     const s = this.state.settings;
     const q = QUALITY[s.quality] ?? QUALITY['střední'];
-    if (this.world.quality !== q) this.world.setQuality(q);
+    const aerial = s.surface === 'letecký snímek';
+    if (this.world.quality !== q || this.world.aerial !== aerial) {
+      this.world.aerial = aerial;
+      this.world.setQuality(q);
+    }
     this.env.setShadows(q.shadows);
     this.post = q.shadows;
     if (this.grass) this.grass.enabled = q.radius >= 2;

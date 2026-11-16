@@ -686,6 +686,7 @@ function settingsPanel(g: Game) {
       <label>Denní doba <span id="s-tl">${g.env.time.toFixed(1)} h</span></label><input type="range" id="s-time" min="0" max="23.9" step="0.1" value="${g.env.time}">
       <label>Plynutí času</label><select id="s-speed">${[-1, 0, 1, 10, 60].map((v) => `<option value="${v}" ${v === s.timeSpeed ? 'selected' : ''}>${v < 0 ? 'skutečný čas a roční období' : v === 0 ? 'zastaveno' : v === 1 ? '1 min / s' : `${v} min / s`}</option>`).join('')}</select>
       <label>Zvuk</label><select id="s-sound">${opt(['zapnutý', 'vypnutý'], s.sound ? 'zapnutý' : 'vypnutý')}</select>
+      <label>Povrch krajiny</label><select id="s-surface">${opt(['mapa', 'letecký snímek'], s.surface ?? 'mapa')}</select>
       <label>Doprava</label><select id="s-traffic">${opt(['zapnutá', 'vypnutá'], g.traffic.enabled ? 'zapnutá' : 'vypnutá')}</select>
     </div>
     <h3>Uložená hra</h3>
@@ -716,6 +717,10 @@ function settingsPanel(g: Game) {
     g.env.timeSpeed = Math.max(0, s.timeSpeed);
   };
   sel('s-sound').onchange = () => (g.audio.enabled = s.sound = sel('s-sound').value === 'zapnutý');
+  sel('s-surface').onchange = () => {
+    s.surface = sel('s-surface').value as 'mapa' | 'letecký snímek';
+    g.applySettings();
+  };
   sel('s-traffic').onchange = () => (g.traffic.enabled = sel('s-traffic').value === 'zapnutá');
   on('#s-export', () => {
     g.save();

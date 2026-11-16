@@ -291,6 +291,8 @@ export class World {
   graph = new RoadGraph();
   tileUrl = '';
   quality: Quality = QUALITY['střední'];
+  /** Povrch z leteckých snímků (ortofoto ČÚZK). */
+  aerial = false;
   onTileLoaded: ((key: string) => void) | null = null;
   stats = { nearLoaded: 0, farLoaded: 0, pending: 0, errors: 0, nearMs: 0, nearCount: 0 };
   private sentAt = new Map<number, number>();
@@ -553,6 +555,7 @@ export class World {
       texSize: kind === 'near' ? this.quality.texSize : 512,
       treeBudget: kind === 'near' ? this.quality.trees : 0,
       n: this.quality.texSize >= 1024 ? 256 : 128,
+      aerial: this.aerial,
     };
     // Vzdálené dlaždice z12 berou vektorová data ze z12.
     this.pending.set(tileKey(z, x, y), id);

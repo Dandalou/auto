@@ -12,6 +12,8 @@ export interface TileRequest {
   tileUrl: string;
   texSize: number;
   treeBudget: number;
+  /** Letecký snímek jako povrch. */
+  aerial?: boolean;
   /** Počet segmentů výškové mřížky blízké dlaždice (128 nebo 256). */
   n: number;
 }

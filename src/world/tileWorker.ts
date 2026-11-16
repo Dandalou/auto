@@ -616,7 +616,7 @@ interface BuildCtx {
 }
 
 /** Ortofoto ČÚZK pro dlaždici (barvy střech). */
-async function loadOrtho(z: number, x: number, y: number, n: number): Promise<{ data: Uint8ClampedArray; n: number } | null> {
+async function loadOrtho(z: number, x: number, y: number, n: number): Promise<{ data: Uint8ClampedArray; n: number; canvas: OffscreenCanvas } | null> {
   const o = Math.PI * 6378137;
   const S = (2 * o) / 2 ** z;
   const url = `https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO/MapServer/export?bbox=${(x * S - o).toFixed(1)},${(o - (y + 1) * S).toFixed(1)},${((x + 1) * S - o).toFixed(1)},${(o - y * S).toFixed(1)}&bboxSR=3857&imageSR=3857&size=${n},${n}&format=jpg&f=image`;
@@ -639,7 +639,7 @@ async function loadOrtho(z: number, x: number, y: number, n: number): Promise<{ 
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     ctx.drawImage(bmp, 0, 0, n, n);
     bmp.close();
-    return { data: ctx.getImageData(0, 0, n, n).data, n };
+    return { data: ctx.getImageData(0, 0, n, n).data, n, canvas: c };
   } catch {
     return null;
   }
@@ -2003,7 +2003,8 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const step = 256 / N;
   const cz = near && inCzBox(z, x, y);
   const dmrP = cz ? loadCuzk('dmr5g', z, x, y, CN) : Promise.resolve(null);
-  const orthoP = cz && req.texSize >= 512 ? loadOrtho(z, x, y, 768) : Promise.resolve(null);
+  const aerial = req.aerial && inCzBox(z, x, y);
+  const orthoP = (cz && req.texSize >= 512) || aerial ? loadOrtho(z, x, y, near ? Math.max(768, aerial ? req.texSize : 0) : 512) : Promise.resolve(null);
   const ruianP = cz ? loadRuian(z, x, y, TILE_M * 2 ** (14 - z)) : Promise.resolve([] as RuianPt[]);
   const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
   await sampler.prepare((x - margin) * scale, (y - margin) * scale, (x + 1 + margin) * scale, (y + 1 + margin) * scale);
@@ -2034,7 +2035,35 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   if (near && vt) flattenRoads(vt, grid);
   mark('srovnani');
   const seed = hashStr(`${z}/${x}/${y}`);
-  const canvas = paintGround(vt, req.texSize, sizeM, seed, near);
+  let canvas = paintGround(vt, req.texSize, sizeM, seed, near);
+  if (aerial) {
+    // Letecký snímek místo mapových barev (silnice a budovy jsou na něm vidět).
+    const ortho = await orthoP;
+    if (ortho) {
+      const c = new OffscreenCanvas(req.texSize, req.texSize);
+      const cx = c.getContext('2d')!;
+      cx.drawImage(ortho.canvas, 0, 0, req.texSize, req.texSize);
+      // Mírně zesvětlit a dosytit (snímek je zašedlý).
+      cx.globalCompositeOperation = 'soft-light';
+      cx.fillStyle = 'rgba(255,245,225,0.35)';
+      cx.fillRect(0, 0, req.texSize, req.texSize);
+      cx.globalCompositeOperation = 'source-over';
+      // Střechy otištěné na zemi zakrýt (budovy stojí nad nimi jako 3D modely).
+      const bl = vt?.layers.building;
+      if (bl && near) {
+        const k = req.texSize / EXTENT;
+        cx.fillStyle = '#a9a69d';
+        cx.strokeStyle = '#a9a69d';
+        cx.lineWidth = Math.max(1, (2 * req.texSize) / sizeM);
+        for (let i = 0; i < bl.length; i++) {
+          drawFeature(cx, bl.feature(i), k, true);
+          cx.fill('evenodd');
+          cx.stroke();
+        }
+      }
+      canvas = c;
+    }
+  }
   mark('textura');
   const texture = canvas.transferToImageBitmap();
   const terrain = buildTerrain(grid);

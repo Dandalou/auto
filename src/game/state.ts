@@ -86,6 +86,8 @@ export interface Company {
 
 export interface Settings {
   quality: string;
+  /** Povrch krajiny: mapové barvy nebo letecký snímek. */
+  surface?: 'mapa' | 'letecký snímek';
   season: Season;
   /** Počasí, nebo 'skutečné' podle Open-Meteo. */
   weather: Weather | 'skutečné';
