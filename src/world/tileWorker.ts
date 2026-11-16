@@ -538,6 +538,8 @@ interface BuildCtx {
   bpts: FloatBuf;
   /** Výlohy v přízemí. */
   shops: MeshBuf;
+  /** Fasády panelových domů. */
+  panels: MeshBuf;
   /** Výška povrchu nad terénem (DMP − DMR) z ČÚZK, mřížka cn × cn, nebo null. */
   canopy: Float32Array | null;
   cn: number;
@@ -576,6 +578,7 @@ function measuredHeight(b: BuildCtx, ring: number[][]): number {
 function addWall(
   b: BuildCtx, ax: number, az: number, bx: number, bz: number, y0: number, y1: number, u0: number, col: number[],
   shopTop = 0,
+  target?: MeshBuf,
 ): number {
   const dx = bx - ax;
   const dz = bz - az;
@@ -586,7 +589,7 @@ function addWall(
   const u1 = u0 + len / (3.3 * 4);
   const v0 = 0;
   const v1 = (y1 - y0) / (3.0 * 4);
-  const w = b.walls;
+  const w = target ?? b.walls;
   // Spodní pás s jemným zatmavením u země (náhrada ambient occlusion).
   const ym = Math.min(y1, y0 + 3.2);
   const vm = (ym - y0) / (3.0 * 4);
@@ -818,6 +821,22 @@ function mansardRoof(b: BuildCtx, rings: number[][][], y1: number, rh: number, c
   return true;
 }
 
+/** Kvádr na střeše natočený podle osy budovy. */
+function roofBox(b: BuildCtx, cx: number, cz: number, ux: number, uz: number, hl: number, hs: number, y0: number, y1: number, col: number[]) {
+  const vx = -uz, vz = ux;
+  const c = [[-hl, -hs], [hl, -hs], [hl, hs], [-hl, hs]].map(([a, d]) => [cx + ux * a + vx * d, cz + uz * a + vz * d]);
+  const top = c.map((p) => [p[0], y1, p[1]]);
+  tri(b.roofs, top[0], top[1], top[2], col);
+  tri(b.roofs, top[0], top[2], top[3], col);
+  const side = col.map((v) => v * 0.85);
+  for (let i = 0; i < 4; i++) {
+    const p = c[i], q = c[(i + 1) % 4];
+    const a0 = [p[0], y0, p[1]], a1 = [q[0], y0, q[1]], b1 = [q[0], y1, q[1]], b0 = [p[0], y1, p[1]];
+    tri(b.roofs, a0, a1, b1, side);
+    tri(b.roofs, a0, b1, b0, side);
+  }
+}
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
   const layer = vt.layers.building;
   if (!layer) return;
@@ -883,11 +902,17 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       const shopTop = minH < 2.5 && ph >= 9 && ph <= 40 && areaM > 120 && seed % 10 < 7 ? top + 4.3 : 0;
       const y1 = top + wallH;
       b.bpts.push(cx * s, cy * s, areaM * hgtEff);
+      // Panelový dům: vysoký, hranatý, s plochou střechou.
+      let panel = false;
+      if (!bbP && shopTop === 0 && ph >= 13 && areaM > 250 && poly.holes.length === 0 && minH < 2.5) {
+        const ob = obb(ringM);
+        panel = !!ob && areaM / ob.area > 0.85 && ob.hl / Math.max(ob.hs, 1) > 1.6;
+      }
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
-          u = addWall(b, ax, az, bx, bz, y0, y1, u, col, shopTop);
+          u = addWall(b, ax, az, bx, bz, y0, y1, u, col, shopTop, panel ? b.panels : undefined);
           if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
         }
       }
@@ -916,6 +941,23 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         for (let i = 0; i < idx.length; i += 3) {
           for (const k of [idx[i], idx[i + 2], idx[i + 1]]) {
             b.roofs.vert(flat[k * 2], y1, flat[k * 2 + 1], 0, 1, 0, 0, 0, rc);
+          }
+        }
+        // Atika a technika na střeše (strojovny výtahů, vzduchotechnika).
+        if (areaM > 150 && minH < 2.5) {
+          const ob = obb(ringM);
+          if (ob) {
+            const n = Math.min(4, 1 + Math.floor(areaM / 400));
+            for (let k = 0; k < n; k++) {
+              const r1 = ((seed >>> (k * 5)) % 100) / 100, r2 = ((seed >>> (k * 5 + 3)) % 100) / 100;
+              const along = (r1 - 0.5) * ob.hl * 1.2;
+              const across = (r2 - 0.5) * ob.hs * 0.8;
+              const cxr = ob.cx + ob.ux * along - ob.uz * across;
+              const czr = ob.cz + ob.uz * along + ob.ux * across;
+              const big = k === 0 && ph > 12;
+              const w2 = big ? 2.2 : 0.8 + r1 * 0.6, d2 = big ? 3 : 0.8 + r2 * 0.6, h2 = big ? 2.6 : 0.9;
+              roofBox(b, cxr, czr, ob.ux, ob.uz, w2, d2, y1, y1 + h2, big ? rc.map((v) => v * 1.15) : [0.72, 0.73, 0.74]);
+            }
           }
         }
       }
@@ -1633,7 +1675,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   if (near && vt) {
     const s = sizeM / EXTENT;
     const bctx: BuildCtx = {
-      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(),
+      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
     };
     buildBuildings(vt, bctx);
@@ -1654,9 +1696,10 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!rctx.paths.empty) data.paths = rctx.paths.arrays(true, false);
     if (!rctx.walks.empty) data.sidewalks = rctx.walks.arrays(true, false);
     if (!bctx.shops.empty) data.shops = bctx.shops.arrays(true, true);
+    if (!bctx.panels.empty) data.panels = bctx.panels.arrays(true, true);
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
-    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops]) addMesh(m);
+    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels]) addMesh(m);
     let circles: number[] = [];
     if (req.treeBudget > 0) {
       const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);

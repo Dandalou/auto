@@ -542,6 +542,7 @@ export class Game {
     this.env.update(dt, this.camera.position, this.focus());
     this.world.mats.walls.emissiveIntensity = this.env.night * 1.4;
     this.world.mats.shop.emissiveIntensity = this.env.night * 1.6;
+    this.world.mats.panel.emissiveIntensity = this.env.night * 1.4;
     this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.setSeason(this.env.season);
@@ -1059,7 +1060,7 @@ export class Game {
         }
       }
       const w = p.cls === 'city' ? 3 : p.cls === 'town' ? 2 : 1;
-      if (['city', 'town', 'village', 'hamlet'].includes(p.cls) && d < 2500 * w && (!best || d / w < best.d / best.w)) best = { name: p.name, d, w };
+      if (['city', 'town', 'village', 'hamlet'].includes(p.cls) && d < (p.cls === 'city' ? 15000 : 2500 * w) && (!best || d / w < best.d / best.w)) best = { name: p.name, d, w };
     }
     // Čtvrť má přednost, je-li blízko.
     let suburb: string | null = null;

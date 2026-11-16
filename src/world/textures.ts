@@ -93,6 +93,49 @@ export function roadTexture(marked: boolean): THREE.CanvasTexture {
   return t;
 }
 
+/** Panelový dům: 4 patra × 4 sekce na dlaždici textury (stejné měřítko jako fasády). */
+export function panelTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
+  const S = 256;
+  const cell = S / 4;
+  const a = canvas(S, S);
+  const b = canvas(S, S);
+  a.ctx.fillStyle = '#ffffff';
+  a.ctx.fillRect(0, 0, S, S);
+  b.ctx.fillStyle = '#000';
+  b.ctx.fillRect(0, 0, S, S);
+  for (let j = 0; j < 4; j++) {
+    for (let i = 0; i < 4; i++) {
+      const x = i * cell, y = j * cell;
+      // Spáry mezi panely.
+      a.ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      a.ctx.fillRect(x, y + cell - 2, cell, 2);
+      a.ctx.fillRect(x + cell - 2, y, 2, cell);
+      const loggia = (i + j * 3) % 4 === 1;
+      if (loggia) {
+        // Lodžie: tmavý zapuštěný prostor se zábradlím.
+        a.ctx.fillStyle = '#4a4f55';
+        a.ctx.fillRect(x + 6, y + 8, cell - 12, cell - 18);
+        a.ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        a.ctx.fillRect(x + 6, y + cell * 0.55, cell - 12, cell * 0.25);
+      } else {
+        a.ctx.fillStyle = '#e6e2da';
+        a.ctx.fillRect(x + 8, y + 14, cell - 16, cell * 0.42 + 4);
+        a.ctx.fillStyle = '#3d4854';
+        a.ctx.fillRect(x + 10, y + 16, cell - 20, cell * 0.42);
+        a.ctx.fillStyle = 'rgba(200,220,235,0.3)';
+        a.ctx.fillRect(x + 10, y + 16, (cell - 20) * 0.4, cell * 0.42);
+        a.ctx.fillStyle = '#e6e2da';
+        a.ctx.fillRect(x + cell / 2 - 1, y + 16, 2, cell * 0.42);
+      }
+      if (((i * 7 + j * 5) % 10) < 4) {
+        b.ctx.fillStyle = (i + j) % 3 ? '#ffd58a' : '#fff0c8';
+        b.ctx.fillRect(x + 10, y + 16, cell - 20, cell * 0.42);
+      }
+    }
+  }
+  return { map: finish(a.c), emissive: finish(b.c) };
+}
+
 /** Dlažba chodníku: u = příčně (2,4 m), v = délka (8 m na opakování). */
 export function sidewalkTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 256);

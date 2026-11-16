@@ -80,6 +80,7 @@ export interface TileData {
   rails?: MeshArrays;
   sidewalks?: MeshArrays;
   shops?: MeshArrays;
+  panels?: MeshArrays;
   /** Pouliční lampy: x, y, z. */
   lamps?: Float32Array;
   /** x, y, z, měřítko, druh (0 = jehličnan, 1 = listnáč, 2 = keř). */

@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TILE_M, tileKey } from '../geo';
 import { gridHeight, type HeightGrid } from './heightgrid';
 import { RoadGraph } from './roadgraph';
-import { facadeTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
+import { facadeTextures, panelTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
 import type { Colliders, MeshArrays, NamedPoint, PlacePoint, StreetLine, TileData, TileKind, TileRequest } from './types';
 import TileWorker from './tileWorker?worker';
 
@@ -314,6 +314,7 @@ export class World {
     tree: THREE.MeshStandardMaterial;
     walk: THREE.MeshStandardMaterial;
     shop: THREE.MeshStandardMaterial;
+    panel: THREE.MeshStandardMaterial;
     lamp: THREE.MeshStandardMaterial;
     glow: THREE.PointsMaterial;
   };
@@ -347,6 +348,13 @@ export class World {
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
       tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
       walk: roadMat(sidewalkTexture(), 'walk', 2),
+      panel: (() => {
+        const t = panelTextures();
+        return new THREE.MeshStandardMaterial({
+          vertexColors: true, map: t.map, emissiveMap: t.emissive, emissive: new THREE.Color(1, 0.85, 0.6),
+          emissiveIntensity: 0, roughness: 0.85, side: THREE.DoubleSide,
+        });
+      })(),
       shop: (() => {
         const t = shopTexture();
         return new THREE.MeshStandardMaterial({
@@ -592,6 +600,7 @@ export class World {
     add(d.paths, this.mats.path, false, true, 'paths');
     add(d.sidewalks, this.mats.walk, false, true, 'sidewalks');
     add(d.shops, this.mats.shop, true, true, 'shops');
+    add(d.panels, this.mats.panel, true, true, 'walls');
     add(d.rails, this.mats.rail, false, true, 'rails');
     add(d.bridgeSides, this.mats.bridge, false, true, 'bridges');
     if (d.trees && d.trees.length) {
