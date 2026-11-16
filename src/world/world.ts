@@ -552,7 +552,10 @@ export class World {
     const id = this.reqId++;
     const req: TileRequest = {
       id, kind, z, x, y, tileUrl: this.tileUrl,
-      texSize: kind === 'near' ? this.quality.texSize : 512,
+      // Letecký snímek: dlaždice u hráče ve vyšším rozlišení (cca 0,8 m/px).
+      texSize: kind === 'near'
+        ? (this.aerial && this.quality.texSize >= 1024 && Math.max(Math.abs(x - Math.floor(this.center.x / TILE_M)), Math.abs(y - Math.floor(this.center.z / TILE_M))) <= 1 ? 2048 : this.quality.texSize)
+        : 512,
       treeBudget: kind === 'near' ? this.quality.trees : 0,
       n: this.quality.texSize >= 1024 ? 256 : 128,
       aerial: this.aerial,
