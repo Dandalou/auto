@@ -26,6 +26,8 @@ export const QUALITY: Record<string, Quality> = {
 
 interface NearTile {
   key: string;
+  /** Rozlišení textury povrchu (pro dotažení ostřejšího leteckého snímku). */
+  texSize: number;
   x: number;
   y: number;
   ox: number;
@@ -513,6 +515,15 @@ export class World {
     this.stats.pending = this.pending.size;
     this.pump();
     this.updateMask(tx, ty);
+    // Letecký snímek: dlaždice, ke kterým hráč dojel, dotáhnout ve vyšším rozlišení (po jedné).
+    if (this.aerial && this.quality.texSize >= 1024 && ![...this.pending.keys()].some((k) => this.near.has(k))) {
+      for (const t of this.near.values()) {
+        if (t.texSize >= 2048 || Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty)) > 1) continue;
+        this.request('near', 14, t.x, t.y);
+        this.pump();
+        break;
+      }
+    }
     // Úroveň detailu stromů podle vzdálenosti dlaždice.
     for (const t of this.near.values()) {
       const far = Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty)) > 1;
@@ -602,7 +613,11 @@ export class World {
       this.pump();
       return;
     }
-    if (d.kind === 'near') this.addNear(key, d);
+    if (d.kind === 'near') {
+      // Náhrada za stejnou dlaždici v nižším rozlišení.
+      if (this.near.has(key)) this.unloadNear(key);
+      this.addNear(key, d);
+    }
     else this.addFar(key, d);
     this.stats.pending = this.pending.size;
     this.pump();
@@ -747,7 +762,7 @@ export class World {
     }
     this.root.add(group);
     const tile: NearTile = {
-      key, x: d.x, y: d.y, ox, oz, group, grid: { n: d.n, size: d.size, h: d.heights },
+      key, texSize: d.texture?.width ?? 0, x: d.x, y: d.y, ox, oz, group, grid: { n: d.n, size: d.size, h: d.heights },
       colliders: d.colliders, bridges: d.bridges, stops: d.stops ?? [], fuel: d.fuel ?? [], tramStops: d.tramStops ?? [], addresses: d.addresses ?? [],
       places: d.places ?? [], streets: d.streets ?? [], buildings: d.buildings, texture: d.texture, disposables,
     };
