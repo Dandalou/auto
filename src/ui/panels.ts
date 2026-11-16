@@ -70,8 +70,8 @@ function jobsPanel(g: Game) {
     offersAt = { x: g.px, z: g.pz, t: performance.now() };
   }
   const own = (t: VehicleType[]) => t.some((v) => g.state.garage.includes(v));
-  const needs: Record<string, VehicleType[]> = { bus: ['autobus', 'meziměstský'], taxi: ['taxi', 'auto'], delivery: ['dodávka', 'auto', 'taxi'], tram: ['tramvaj'], metro: ['metro'] };
-  const icon: Record<string, string> = { bus: '🚌', taxi: '🚕', delivery: '📦', tram: '', metro: '' };
+  const needs: Record<string, VehicleType[]> = { bus: ['autobus', 'meziměstský'], taxi: ['taxi', 'auto'], delivery: ['dodávka', 'auto', 'taxi'], tram: ['tramvaj'], metro: ['metro'], freight: ['kamion', 'dodávka'] };
+  const icon: Record<string, string> = { bus: '🚌', taxi: '🚕', delivery: '📦', tram: '', metro: '', freight: '' };
   const cards = offers.map((o, i) => {
     const owned = own(needs[o.kind]);
     return `<div class="card">

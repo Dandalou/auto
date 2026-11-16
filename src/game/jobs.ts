@@ -8,6 +8,7 @@ import { buildPerson, updateSign, type VehicleModel } from './models';
 import type { Vehicle, VehicleType } from './vehicle';
 import type { LineStop } from './state';
 import { planPidLines } from './pid';
+import { CITIES, lonLatToWorld, worldToLonLat } from '../geo';
 
 export interface JobCtx {
   world: World;
@@ -37,7 +38,7 @@ export interface JobResult {
 }
 
 export abstract class Job {
-  abstract kind: 'bus' | 'taxi' | 'delivery';
+  abstract kind: 'bus' | 'taxi' | 'delivery' | 'freight';
   abstract title: string;
   abstract vehicle: VehicleType[];
   done = false;
@@ -558,10 +559,92 @@ export class DeliveryJob extends Job {
   }
 }
 
+// --------------------------------------------------------------- nákladní doprava
+
+export class FreightJob extends Job {
+  kind = 'freight' as const;
+  vehicle: VehicleType[] = ['kamion', 'dodávka'];
+  title: string;
+  start = -1;
+  holdT = 0;
+  km: number;
+
+  constructor(public dest: { name: string; x: number; z: number }, public cargo: string, fromX: number, fromZ: number) {
+    super();
+    this.km = (Math.hypot(dest.x - fromX, dest.z - fromZ) * 1.25) / 1000;
+    this.title = `Náklad: ${cargo} → ${dest.name}`;
+  }
+
+  target(): Waypoint | null {
+    return { x: this.dest.x, z: this.dest.z, label: this.dest.name };
+  }
+
+  update(dt: number, ctx: JobCtx) {
+    const v = ctx.vehicle;
+    if (!v || !this.vehicle.includes(v.spec.type)) return;
+    if (this.start < 0) this.start = ctx.clock;
+    const d = Math.hypot(v.x - this.dest.x, v.z - this.dest.z);
+    if (d < 350 && v.speed < 0.8) {
+      this.holdT += dt;
+      if (this.holdT > 3) {
+        const time = ctx.clock - this.start;
+        const limit = (this.km / 60) * 3600 + 300; // průměr 60 km/h + rezerva
+        const inTime = time <= limit;
+        const truck = v.spec.type === 'kamion';
+        const pay = Math.round((400 + this.km * (truck ? 95 : 60)) * (inTime ? 1.15 : 0.85));
+        this.result = {
+          pay, xp: Math.round(30 + this.km * 3),
+          summary: [
+            `Doručeno do ${this.dest.name}: ${this.cargo}`,
+            `Vzdálenost cca ${this.km.toFixed(0)} km za ${fmtTime(time)} (limit ${fmtTime(limit)})`,
+            inTime ? 'Včas – příplatek 15 %' : 'Pozdě – srážka 15 %',
+          ],
+          stats: { deliveries: 1 },
+        };
+        this.done = true;
+      }
+    } else this.holdT = 0;
+    v.impacts.length = 0;
+  }
+
+  status(ctx: JobCtx): string {
+    const v = ctx.vehicle;
+    const d = v ? Math.hypot(v.x - this.dest.x, v.z - this.dest.z) : 0;
+    const wrong = !v || !this.vehicle.includes(v.spec.type);
+    const time = this.start < 0 ? 0 : ctx.clock - this.start;
+    return `<b>${escapeHtml(this.title)}</b><br>
+      ${wrong ? '<span class="warn">Potřebujete nákladní auto nebo dodávku</span><br>' : ''}
+      Zbývá ${(d / 1000).toFixed(1)} km vzdušnou čarou · na cestě ${fmtTime(time)}<br>
+      <span class="muted">Navigace se zobrazí, až bude cíl v načteném okolí – zatím jeďte po ukazateli na minimapě. Zastavte v cíli (do 350 m).</span>`;
+  }
+}
+
+const CARGO = ['stavební materiál', 'potraviny', 'nábytek', 'pivo', 'dřevo', 'autodíly', 'elektronika', 'zemědělské stroje', 'papír', 'nápoje'];
+
+/** Zakázka do jiného města 15–80 km daleko. */
+export function freightOffer(x: number, z: number): Offer | null {
+  const cands = CITIES.map((c) => ({ c, p: lonLatToWorld(c.lon, c.lat) }))
+    .map((o) => ({ ...o, d: Math.hypot(o.p.x - x, o.p.z - z) }))
+    .filter((o) => o.d > 15000 && o.d < 80000);
+  if (!cands.length) return null;
+  const o = cands[Math.floor(Math.random() * cands.length)];
+  const cargo = CARGO[Math.floor(Math.random() * CARGO.length)];
+  const km = (o.d * 1.25) / 1000;
+  const name = o.c.name.split(' – ')[0].split(' (')[0];
+  void worldToLonLat;
+  return {
+    kind: 'freight',
+    title: `🚛 ${cargo} → ${name}`,
+    detail: `cca ${km.toFixed(0)} km · nákladní auto (dodávka za nižší odměnu)`,
+    estPay: Math.round(400 + km * 95),
+    make: () => new FreightJob({ name, x: o.p.x, z: o.p.z }, cargo, x, z),
+  };
+}
+
 // --------------------------------------------------------------- nabídky
 
 export interface Offer {
-  kind: 'bus' | 'taxi' | 'delivery' | 'tram' | 'metro';
+  kind: 'bus' | 'taxi' | 'delivery' | 'tram' | 'metro' | 'freight';
   title: string;
   detail: string;
   estPay: number;
@@ -679,6 +762,8 @@ export function generateOffers(world: World, x: number, z: number): Offer[] {
       });
     }
   }
+  const fr = freightOffer(x, z);
+  if (fr) offers.push(fr);
   return offers;
 }
 
