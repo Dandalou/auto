@@ -16,7 +16,7 @@ export interface VehicleModel {
   sign?: { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture };
 }
 
-const glass = new THREE.MeshStandardMaterial({ color: 0x223040, roughness: 0.08, metalness: 0.6, envMapIntensity: 2.5 });
+const glass = new THREE.MeshStandardMaterial({ color: 0x2c3e52, roughness: 0.06, metalness: 0.7, envMapIntensity: 4 });
 const tyre = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
 const rim = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.35, metalness: 0.8 });
 const dark = new THREE.MeshStandardMaterial({ color: 0x222326, roughness: 0.7 });
@@ -78,12 +78,46 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
   if (spec.type === 'autobus' || spec.type === 'meziměstský' || spec.type === 'tramvaj') {
     const tram = spec.type === 'tramvaj';
     const floor = 0.35;
-    body.add(box(W, H - floor - 0.05, L, paint, 0, floor + (H - floor) / 2, 0));
+    // Zaoblená skříň s podběhy kol (u tramvaje bez podběhů).
+    const sh = new THREE.Shape();
+    const r = tram ? 0.5 : 0.38;
+    const fr = -L / 2, rr = L / 2;
+    sh.moveTo(fr + 0.15, floor);
+    const busAxles = tram ? [] : [-L / 2 + 2.6, -L / 2 + 2.6 + spec.wheelbase];
+    const archR = wr + 0.14;
+    for (const az of busAxles) {
+      sh.lineTo(az - archR, floor);
+      sh.absarc(az, wr, archR, Math.PI, 0, true);
+    }
+    sh.lineTo(rr - 0.12, floor);
+    sh.quadraticCurveTo(rr, floor, rr, floor + 0.2);
+    sh.lineTo(rr, H - r);
+    sh.quadraticCurveTo(rr, H, rr - r, H);
+    sh.lineTo(fr + r * 1.4, H);
+    sh.quadraticCurveTo(fr - 0.04, H, fr - 0.04, H - r * 1.2);
+    sh.lineTo(fr, floor + 0.25);
+    sh.quadraticCurveTo(fr, floor, fr + 0.15, floor);
+    const eg = new THREE.ExtrudeGeometry(sh, { depth: W - 0.16, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 3, curveSegments: 8 });
+    eg.rotateY(-Math.PI / 2);
+    eg.translate(W / 2 - 0.08, 0, 0);
+    eg.deleteAttribute('uv');
+    const egm = mergeVertices(eg, 1e-4);
+    egm.computeVertexNormals();
+    const shell = new THREE.Mesh(egm, paint);
+    shell.castShadow = true;
+    body.add(shell);
+    // Klimatizace na střeše a tmavý spodní lem.
+    if (!tram) body.add(box(W * 0.6, 0.28, L * 0.22, new THREE.MeshStandardMaterial({ color: 0xd9d9d6, roughness: 0.5 }), 0, H + 0.12, L * 0.12));
+    body.add(box(W + 0.02, 0.16, L * 0.96, new THREE.MeshStandardMaterial({ color: 0x26272b, roughness: 0.7 }), 0, floor + 0.08, 0));
     // Okna po stranách.
     const winH = spec.type === 'autobus' ? 1.15 : 0.95;
     const winY = H - 0.35 - winH / 2;
     body.add(box(W + 0.02, winH, L - 1.4, glass, 0, winY, 0.3));
-    body.add(box(W - 0.2, 1.3, 0.05, glass, 0, H - 1.2, -L / 2 - 0.01));
+    // Rámy oken.
+    for (let z = -L / 2 + 1.0; z < L / 2 - 0.6; z += tram ? 1.8 : 1.45) {
+      for (const sx of [-1, 1]) body.add(box(0.04, winH + 0.02, 0.12, paint, sx * (W / 2 + 0.025), winY, z));
+    }
+    body.add(box(W - 0.12, 1.55, 0.05, glass, 0, H - 1.25, -L / 2 - 0.04));
     body.add(box(W + 0.03, 0.3, L * 0.98, new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.5 }), 0, floor + 0.55, 0));
     // Dveře na pravé straně.
     const doorMat = new THREE.MeshStandardMaterial({ color: 0x30363d, roughness: 0.3, metalness: 0.3 });

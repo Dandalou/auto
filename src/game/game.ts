@@ -26,7 +26,7 @@ import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
 
 const VEHICLE_COLORS: Record<VehicleType, number> = {
-  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xc8202a, meziměstský: 0x2b6cb0, kamion: 0x3a6b3a, tramvaj: 0xc8202a,
+  auto: 0xc8452f, taxi: 0xf3d23a, dodávka: 0xeeeeee, autobus: 0xd8342c, meziměstský: 0x2f78c4, kamion: 0x3a6b3a, tramvaj: 0xd8342c,
 };
 
 const $ = (id: string) => document.getElementById(id)!;
