@@ -21,6 +21,7 @@ import { Pedestrians } from './pedestrians';
 import { loadPid } from './pid';
 import { Signals } from './signals';
 import { Grass } from '../world/grass';
+import { Skidmarks } from './skidmarks';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
@@ -41,6 +42,7 @@ export class Game {
   readonly pedestrians: Pedestrians;
   readonly signals: Signals;
   readonly grass: Grass;
+  readonly skid: Skidmarks;
   readonly audio = new AudioFx();
   readonly input: Input;
   readonly minimap: Minimap;
@@ -95,6 +97,8 @@ export class Game {
     this.traffic = new Traffic(this.world);
     this.scene.add(this.traffic.group);
     this.grass = new Grass(this.world);
+    this.skid = new Skidmarks(this.world);
+    this.scene.add(this.skid.mesh);
     this.scene.add(this.grass.mesh);
     this.signals = new Signals(this.world);
     this.scene.add(this.signals.group);
@@ -741,6 +745,7 @@ export class Game {
     else {
       v.update(dt, ax, this.world, this.env.grip(), obstacles);
       v.updateAttitude(this.world, dt);
+      this.skid.update(v, true);
     }
     this.crashCool -= dt;
     for (const imp of v.impacts) {
