@@ -1,6 +1,7 @@
 // Procedurální modely vozidel a chodce (bez externích assetů).
 
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { VehicleSpec } from './vehicle';
 
 export interface VehicleModel {
@@ -60,7 +61,7 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.45, envMapIntensity: 2.2 });
+  const paint = new THREE.MeshPhysicalMaterial({ color, roughness: 0.32, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 2.2 });
   const L = spec.length;
   const W = spec.width;
   const H = spec.height;
@@ -147,33 +148,76 @@ export function buildVehicleModel(spec: VehicleSpec, color: number, withLights: 
       body.add(box(0.2, 0.25, 0.06, brakeMat, sx * (W / 2 - 0.2), 0.8, L / 2 + 0.02));
     }
   } else {
-    // Osobní auto / taxi: vytažené boční profily (spodek, kabina, skla).
+    // Osobní auto / taxi: hladké boční profily s podběhy kol, kabinou a skly.
     const ku = L / 4.4;
     const kv = H / 1.45;
-    const prof = (pts: number[][], width: number, mat: THREE.Material, bevel: number) => {
-      const sh = new THREE.Shape(pts.map(([u, v]) => new THREE.Vector2(u * ku, v * kv)));
+    const P = (u: number, v: number) => new THREE.Vector2(u * ku, v * kv);
+    const extrude = (sh: THREE.Shape, width: number, mat: THREE.Material, bevel: number) => {
       const g = new THREE.ExtrudeGeometry(sh, {
-        depth: width - bevel * 2, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 2, curveSegments: 4,
+        depth: width - bevel * 2, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 10,
       });
       g.rotateY(-Math.PI / 2);
       g.translate(width / 2 - bevel, 0, 0);
-      g.computeVertexNormals();
-      const m = new THREE.Mesh(g, mat);
+      // Sloučit vrcholy, aby zaoblení bylo hladké (bez pruhů v odrazech).
+      g.deleteAttribute('uv');
+      const sm = mergeVertices(g, 1e-4);
+      sm.computeVertexNormals();
+      const m = new THREE.Mesh(sm, mat);
       m.castShadow = true;
       body.add(m);
       return m;
     };
-    prof([[-2.2, 0.3], [-2.2, 0.72], [-2.05, 0.86], [-0.9, 0.98], [1.85, 1.0], [2.2, 0.95], [2.2, 0.3]], W, paint, 0.06);
-    prof([[-0.9, 0.96], [-0.25, 1.42], [0.95, 1.42], [1.85, 0.98]], W * 0.84, paint, 0.05);
-    prof([[-0.95, 0.97], [-0.3, 1.395], [1.0, 1.395], [1.93, 0.97]], W * 0.87, glass, 0);
-    body.add(box(W * 0.98, 0.16, 0.12, dark, 0, 0.36, -L / 2 + 0.02));
-    body.add(box(W * 0.98, 0.16, 0.12, dark, 0, 0.36, L / 2 - 0.02));
+    const fA = (-spec.wheelbase / 2 - 0.05) / ku, rA = (spec.wheelbase / 2 - 0.05) / ku;
+    const ar = (wr + 0.08) / ku;
+    const wy = wr / kv;
+    // Spodní část karoserie s podběhy.
+    const lower = new THREE.Shape();
+    lower.moveTo(P(-2.12, 0.3).x, P(-2.12, 0.3).y);
+    lower.lineTo(P(fA - ar, 0.3).x, P(fA - ar, 0.3).y);
+    lower.absarc(fA * ku, wy * kv, ar * ku, Math.PI, 0, true);
+    lower.lineTo(P(rA - ar, 0.3).x, P(rA - ar, 0.3).y);
+    lower.absarc(rA * ku, wy * kv, ar * ku, Math.PI, 0, true);
+    lower.lineTo(P(2.14, 0.32).x, P(2.14, 0.32).y);
+    lower.quadraticCurveTo(P(2.24, 0.34).x, P(2.24, 0.34).y, P(2.22, 0.7).x, P(2.22, 0.7).y);
+    lower.quadraticCurveTo(P(2.2, 0.95).x, P(2.2, 0.95).y, P(2.0, 0.99).x, P(2.0, 0.99).y);
+    lower.lineTo(P(1.7, 1.0).x, P(1.7, 1.0).y);
+    lower.lineTo(P(-0.85, 0.97).x, P(-0.85, 0.97).y);
+    lower.quadraticCurveTo(P(-1.6, 0.93).x, P(-1.6, 0.93).y, P(-2.08, 0.8).x, P(-2.08, 0.8).y);
+    lower.quadraticCurveTo(P(-2.26, 0.72).x, P(-2.26, 0.72).y, P(-2.22, 0.45).x, P(-2.22, 0.45).y);
+    lower.quadraticCurveTo(P(-2.2, 0.31).x, P(-2.2, 0.31).y, P(-2.12, 0.3).x, P(-2.12, 0.3).y);
+    extrude(lower, W, paint, 0.08);
+    // Kabina (střecha a sloupky) a skla.
+    const cabin = (inflate: number, roof: number) => {
+      const c = new THREE.Shape();
+      c.moveTo(P(-0.86 - inflate, 0.96).x, P(-0.86 - inflate, 0.96).y);
+      c.quadraticCurveTo(P(-0.45 - inflate, 1.3).x, P(-0.45 - inflate, 1.3).y, P(-0.12, roof).x, P(-0.12, roof).y);
+      c.lineTo(P(0.95, roof).x, P(0.95, roof).y);
+      c.quadraticCurveTo(P(1.5 + inflate, 1.33).x, P(1.5 + inflate, 1.33).y, P(1.74 + inflate, 0.98).x, P(1.74 + inflate, 0.98).y);
+      c.lineTo(P(-0.86 - inflate, 0.96).x, P(-0.86 - inflate, 0.96).y);
+      return c;
+    };
+    extrude(cabin(0, 1.43), W * 0.84, paint, 0.07);
+    extrude(cabin(0.035, 1.39), W * 0.875, glass, 0);
+    // Sloupky mezi okny a lem střechy přes sklo.
     for (const sx of [-1, 1]) {
-      body.add(box(0.36, 0.12, 0.08, headMat, sx * (W / 2 - 0.3), 0.66 * kv, -L / 2 + 0.03));
-      body.add(box(0.34, 0.14, 0.08, brakeMat, sx * (W / 2 - 0.28), 0.8 * kv, L / 2 + 0.01));
-      // Zpětná zrcátka.
-      body.add(box(0.16, 0.1, 0.08, paint, sx * (W / 2 + 0.06), 1.0 * kv, -0.75 * ku));
+      body.add(box(0.05, 0.42 * kv, 0.12, paint, sx * (W * 0.875) / 2, 1.17 * kv, 0.4 * ku));
+      body.add(box(0.05, 0.05, 1.15 * ku, paint, sx * (W * 0.875) / 2, 1.385 * kv, 0.42 * ku));
     }
+    // Nárazníky, prahy, světla.
+    const trim = new THREE.MeshStandardMaterial({ color: 0x1d1e21, roughness: 0.6 });
+    body.add(box(W * 0.96, 0.14, 0.14, trim, 0, 0.36, -L / 2 + 0.06));
+    body.add(box(W * 0.96, 0.14, 0.14, trim, 0, 0.36, L / 2 - 0.06));
+    for (const sx of [-1, 1]) {
+      body.add(box(0.06, 0.1, (rA - fA - ar * 2) * ku * 0.95, trim, sx * (W / 2 - 0.02), 0.36, ((fA + rA) / 2) * ku));
+      const hl = box(0.42, 0.11, 0.1, headMat, sx * (W / 2 - 0.33), 0.7 * kv, -L / 2 + 0.06);
+      hl.rotation.x = -0.35;
+      body.add(hl);
+      body.add(box(0.46, 0.13, 0.08, brakeMat, sx * (W / 2 - 0.3), 0.84 * kv, L / 2 - 0.02));
+      // Zpětná zrcátka.
+      body.add(box(0.18, 0.1, 0.09, paint, sx * (W / 2 + 0.07), 1.0 * kv, -0.72 * ku));
+    }
+    // Maska chladiče.
+    body.add(box(W * 0.45, 0.1, 0.06, trim, 0, 0.55 * kv, -L / 2 + 0.03));
     const cabinTop = 1.42 * kv;
     if (spec.type === 'taxi') {
       const tm = new THREE.MeshStandardMaterial({ color: 0xffe14d, emissive: 0xffd000, emissiveIntensity: 0.5 });

@@ -20,6 +20,7 @@ import { Traffic } from './traffic';
 import { Pedestrians } from './pedestrians';
 import { loadPid } from './pid';
 import { Signals } from './signals';
+import { Grass } from '../world/grass';
 import { SPECS, Vehicle, type VehicleType } from './vehicle';
 import { Minimap } from '../ui/minimap';
 import { openPanel, closePanel, currentPanel, showJobResult } from '../ui/panels';
@@ -39,6 +40,7 @@ export class Game {
   readonly traffic: Traffic;
   readonly pedestrians: Pedestrians;
   readonly signals: Signals;
+  readonly grass: Grass;
   readonly audio = new AudioFx();
   readonly input: Input;
   readonly minimap: Minimap;
@@ -92,6 +94,8 @@ export class Game {
     this.env = new Environment(this.scene, this.renderer);
     this.traffic = new Traffic(this.world);
     this.scene.add(this.traffic.group);
+    this.grass = new Grass(this.world);
+    this.scene.add(this.grass.mesh);
     this.signals = new Signals(this.world);
     this.scene.add(this.signals.group);
     this.traffic.signals = this.signals;
@@ -164,6 +168,7 @@ export class Game {
     if (this.world.quality !== q) this.world.setQuality(q);
     this.env.setShadows(q.shadows);
     this.post = q.shadows;
+    if (this.grass) this.grass.enabled = q.radius >= 2;
     if (this.post && !this.composer) this.setupComposer();
     this.env.season = s.season;
     if (s.weather !== 'skutečné') this.env.weather = s.weather;
@@ -516,6 +521,7 @@ export class Game {
       this.traffic.update(dt, this.px, this.pz, this.walking ? null : this.vehicle, this.state.company?.lines ?? [], this.env.night);
       this.pedestrians.update(dt, this.px, this.pz, this.walking ? null : this.vehicle);
       this.signals.update(dt, this.px, this.pz);
+      this.grass.update(dt, this.px, this.pz, this.env.season);
       this.placeT -= dt;
       if (this.placeT <= 0) {
         this.placeT = 1;
@@ -548,7 +554,8 @@ export class Game {
     }
     this.minimap.draw(this);
     if (this.composer && this.post) {
-      this.bloom!.strength = 0.12 + this.env.night * 0.55;
+      this.bloom!.strength = Math.max(0, this.env.night - 0.2) * 0.7;
+      this.bloom!.enabled = this.bloom!.strength > 0.01;
       this.composer.render();
     } else this.renderer.render(this.scene, this.camera);
     this.updateLabels(dt);
