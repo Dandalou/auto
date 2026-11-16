@@ -630,6 +630,8 @@ export class Game {
   private speedT = 0;
   private redNode: unknown = null;
   private introT = 0;
+  private compiling = false;
+  private shadersReady = false;
   /** Trasa tramvaje (x, z) a kumulativní délky. */
   private tramPath: [number, number][] | null = null;
   private tramCum: number[] = [];
@@ -710,6 +712,10 @@ export class Game {
     $('load-text').textContent = this.world.stats.errors && secs > 15
       ? 'Některé dlaždice se nepodařilo načíst, zkouším dál…'
       : `Stahuji budovy, silnice a terén… (${this.world.near.size}/${tilesWanted})`;
+    if (this.compiling) {
+      $('load-text').textContent = 'Připravuji grafiku…';
+      return;
+    }
     if (!this.world.isReady(x, z)) return;
     const h = this.world.terrainHeight(x, z);
     if (Number.isNaN(h)) return;
@@ -722,6 +728,19 @@ export class Game {
     }
     if (this.walking) {
       this.walker.y = this.world.groundHeight(this.walker.x, this.walker.z, 9999);
+    }
+    // Shadery zkompilovat ještě za načítací obrazovkou (asynchronně, kde to prohlížeč umí),
+    // aby se hra po spuštění nezasekla.
+    if (!this.shadersReady) {
+      this.compiling = true;
+      this.updateCamera(0);
+      this.renderer.compileAsync(this.scene, this.camera)
+        .catch(() => {})
+        .then(() => {
+          this.shadersReady = true;
+          this.compiling = false;
+        });
+      return;
     }
     this.ready = true;
     this.introT = 3.2;
