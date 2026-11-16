@@ -92,6 +92,11 @@ export class Vehicle {
   doorsOpen = false;
   impacts: ImpactEvent[] = [];
   private prevGround = 0;
+  private axSmooth = 0;
+  /** Míra smyku 0..1. */
+  slip = 0;
+  private pitchVel = 0;
+  private rollVel = 0;
   private roadCheckT = 0;
 
   constructor(public spec: VehicleSpec) {}
@@ -130,9 +135,10 @@ export class Vehicle {
     const rolling = offroad ? 0.06 : 0.013;
     // Řízení: plynulé natočení, menší rejd ve vyšších rychlostech.
     const v = Math.abs(this.vF);
-    const steerLimit = s.steerMax / (1 + v * v * (s.mass > 5000 ? 0.0012 : 0.0035));
+    const steerLimit = s.steerMax / (1 + v * v * (s.mass > 5000 ? 0.0015 : 0.006));
     const target = c.steer * steerLimit;
-    const rate = 2.4;
+    // Rychlejší návrat do středu, pomalejší natáčení ve vysoké rychlosti.
+    const rate = (c.steer === 0 ? 3.2 : 2.6) / (1 + v * 0.02);
     this.steer += Math.max(-rate * dt, Math.min(rate * dt, target - this.steer));
     const prevVF = this.vF;
     const prevVL = this.vL;
@@ -147,9 +153,14 @@ export class Vehicle {
   private step(dt: number, c: Controls, world: World, grip: number, rolling: number) {
     const s = this.spec;
     const m = s.mass;
-    const a = s.wheelbase * 0.5;
-    const b = s.wheelbase * 0.5;
-    const Iz = m * (s.length * s.length + s.width * s.width) / 12;
+    const heavy = m > 5000;
+    const L = s.wheelbase;
+    // Těžiště: osobní auta s motorem vpředu mají těžiště blíž přední nápravě.
+    const a = L * (heavy ? 0.55 : 0.43); // těžiště -> přední náprava
+    const b = L - a; // těžiště -> zadní náprava
+    const hcg = heavy ? 1.15 : s.height * 0.38;
+    const Iz = (m * (s.length * s.length + s.width * s.width)) / 12;
+    const fwd = !heavy; // pohon předních kol u osobních aut a dodávek
     const v = this.vF;
     const av = Math.abs(v);
     // Svah.
@@ -165,68 +176,96 @@ export class Vehicle {
     const slopeF = gx * fx + gz * fz;
     const gravF = this.airborne ? 0 : (-G * slopeF) / Math.sqrt(1 + slopeF * slopeF);
 
-    // Podélná síla.
-    let Fx = 0;
-    const eng = Math.min(m * 4.5, s.power / Math.max(av, 4));
-    const wantReverse = c.brake > 0.1 && av < 0.6 && c.throttle < 0.1;
-    if (this.doorsOpen) {
-      // Se otevřenými dveřmi autobus nepojede.
-    } else if (c.throttle > 0) {
-      if (v < -0.5) Fx += m * s.brake * c.throttle;
-      else if (v < s.vmax) Fx += eng * c.throttle * (v > s.vmax * 0.95 ? Math.max(0, (s.vmax - v) / (s.vmax * 0.05)) : 1);
-    }
-    if (c.brake > 0) {
-      if (v > 0.6) Fx -= m * s.brake * c.brake;
-      else if (wantReverse || v <= 0.6) {
-        if (v > -6) Fx -= eng * 0.5 * c.brake;
-      }
-    }
-    if (c.handbrake) Fx -= Math.sign(v) * m * 3.5;
-    if (this.doorsOpen) Fx -= Math.sign(v) * m * 6;
-    Fx -= Math.sign(v) * rolling * m * G;
-    Fx -= 0.42 * (s.width * s.height) * v * av * 0.6;
-    if (this.airborne) Fx = 0;
+    // Zatížení náprav s přenosem hmotnosti (podle vyhlazeného podélného zrychlení).
+    const W = m * G;
+    let Nf = (W * b) / L - (m * this.axSmooth * hcg) / L;
+    let Nr = (W * a) / L + (m * this.axSmooth * hcg) / L;
+    Nf = Math.max(W * 0.1, Nf);
+    Nr = Math.max(W * 0.1, Nr);
+    const mu = grip * (heavy ? 0.85 : 1.05);
 
-    // Boční síly.
-    const delta = this.steer;
-    const Cf = m * 9 * grip;
-    const Cr = m * 10 * grip;
-    const muN = grip * m * G * 0.5;
-    let ax: number, al: number, ar: number;
-    if (av < 3) {
-      // Kinematický model při malých rychlostech.
-      const r = (v * Math.tan(delta)) / s.wheelbase;
-      ax = Fx / m + gravF;
-      this.yawRate += (r - this.yawRate) * Math.min(1, dt * 12);
-      this.vL += (0 - this.vL) * Math.min(1, dt * 10);
-      al = 0;
-      ar = 0;
-    } else {
-      const sv = Math.sign(v);
-      const af = Math.atan2(this.vL + a * this.yawRate, av) - delta * sv;
-      const arr = Math.atan2(this.vL - b * this.yawRate, av);
-      let Fyf = Math.max(-muN, Math.min(muN, -Cf * af));
-      let Fyr = Math.max(-muN, Math.min(muN, -Cr * arr));
-      if (c.handbrake) Fyr *= 0.35;
-      if (this.airborne) {
-        Fyf = 0;
-        Fyr = 0;
+    // Podélné síly na nápravách.
+    let Fdrive = 0;
+    let Fbrake = 0;
+    const eng = Math.min(m * (heavy ? 2.2 : 3.8), s.power / Math.max(av, 3));
+    const wantReverse = c.brake > 0.1 && av < 0.6 && c.throttle < 0.1;
+    if (!this.doorsOpen) {
+      if (c.throttle > 0) {
+        if (v < -0.5) Fbrake += m * s.brake * c.throttle;
+        else if (v < s.vmax) Fdrive += eng * c.throttle * (v > s.vmax * 0.95 ? Math.max(0, (s.vmax - v) / (s.vmax * 0.05)) : 1);
       }
-      ax = (Fx - Fyf * Math.sin(delta)) / m + this.vL * this.yawRate + gravF;
-      al = (Fyr + Fyf * Math.cos(delta)) / m - v * this.yawRate;
-      ar = (a * Fyf * Math.cos(delta) - b * Fyr) / Iz;
-      if (v < 0) ar = -ar;
-      this.vL += al * dt;
-      this.yawRate += ar * dt;
-      // Tlumení, aby model nebyl nestabilní.
-      this.yawRate *= 1 - Math.min(1, dt * 0.8);
+      if (c.brake > 0) {
+        if (v > 0.6) Fbrake += m * s.brake * c.brake;
+        else if (wantReverse || v <= 0.6) {
+          if (v > -6) Fdrive -= eng * 0.5 * c.brake;
+        }
+      }
+      // Brzdění motorem.
+      if (!c.throttle && av > 1) Fbrake += m * (heavy ? 0.35 : 0.6);
+    } else Fbrake += m * 6;
+    // Rozdělení: brzdy 65 % vpředu (ABS – nejvýš na mez přilnavosti), pohon podle typu.
+    const sgn = Math.sign(v) || 1;
+    let Fxf = (fwd ? Fdrive : 0) - sgn * Fbrake * 0.65;
+    let Fxr = (fwd ? 0 : Fdrive) - sgn * Fbrake * 0.35;
+    Fxf = Math.max(-mu * Nf, Math.min(mu * Nf, Fxf));
+    Fxr = Math.max(-mu * Nr, Math.min(mu * Nr, Fxr));
+    let rearLocked = false;
+    if (c.handbrake && av > 0.5) {
+      // Zablokovaná zadní kola: smykové tření místo valení.
+      Fxr = -sgn * mu * Nr * 0.75;
+      rearLocked = true;
     }
+    const drag = 0.42 * (s.width * s.height) * v * av * 0.6 + sgn * rolling * W;
+
+    // Boční síly – zjednodušený Pacejka se saturací a kombinovaným skluzem.
+    const delta = this.steer;
+    // Zadní pneumatiky tužší než přední: stabilní, mírně nedotáčivé auto.
+    const Bf = heavy ? 6 : 8;
+    const Br = heavy ? 8 : 11;
+    const Cp = 1.3;
+    const tyre = (alpha: number, N: number, Fx: number, locked: boolean, B: number) => {
+      const D = mu * N;
+      const avail = locked ? D * 0.3 : Math.sqrt(Math.max(0, D * D - Fx * Fx));
+      return -avail * Math.sin(Cp * Math.atan(B * alpha));
+    };
+    // Plynulý přechod mezi kinematickým (pomalá jízda) a dynamickým modelem.
+    const wDyn = this.airborne ? 0 : Math.min(1, Math.max(0, (av - 1.5) / 3));
+    const vd = Math.max(av, 2);
+    const af = Math.atan2(this.vL + a * this.yawRate, vd) - delta * sgn;
+    const arr = Math.atan2(this.vL - b * this.yawRate, vd);
+    let Fyf = tyre(af, Nf, Fxf, false, Bf);
+    let Fyr = tyre(arr, Nr, Fxr, rearLocked, Br);
+    if (this.airborne) {
+      Fyf = 0;
+      Fyr = 0;
+      Fxf = 0;
+      Fxr = 0;
+    }
+    const Fx = Fxf * Math.cos(delta) + Fxr - drag;
+    let ax = (Fx - wDyn * Fyf * Math.sin(delta)) / m + gravF;
+    const al = (Fyr + Fyf * Math.cos(delta) + Fxf * Math.sin(delta)) / m - v * this.yawRate;
+    let yawAcc = (a * (Fyf * Math.cos(delta) + Fxf * Math.sin(delta)) - b * Fyr) / Iz;
+    if (v < 0) yawAcc = -yawAcc;
+    ax += wDyn * this.vL * this.yawRate;
+    // Dynamická část.
+    const dynYaw = this.yawRate + yawAcc * dt;
+    const dynVL = this.vL + al * dt;
+    // Kinematická část.
+    const kinYaw = (v * Math.tan(delta)) / L;
+    this.yawRate = dynYaw * wDyn + (this.yawRate + (kinYaw - this.yawRate) * Math.min(1, dt * 12)) * (1 - wDyn);
+    this.vL = dynVL * wDyn + this.vL * (1 - Math.min(1, dt * 10)) * (1 - wDyn);
+    // Malé tlumení kvůli numerické stabilitě.
+    this.yawRate *= 1 - Math.min(1, dt * 0.6);
+    this.axSmooth += (ax - this.axSmooth) * Math.min(1, dt * 6);
+
     const before = this.vF;
     this.vF += ax * dt;
     // Brzdění neotáčí směr jízdy.
     if (c.brake > 0 && before > 0 && this.vF < 0 && c.throttle === 0 && before > 0.6) this.vF = 0;
     if (c.handbrake && Math.abs(this.vF) < 0.5) this.vF = 0;
     if (!c.throttle && !c.brake && Math.abs(this.vF) < 0.15 && Math.abs(gravF) < 1.2) this.vF = 0;
+    // Míra smyku pro zvuk a efekty.
+    this.slip = Math.min(1, Math.max(Math.abs(arr), Math.abs(af)) * 4 * wDyn + (rearLocked ? 0.6 : 0));
 
     this.heading += this.yawRate * dt;
     const [nfx, nfz] = this.forward();
@@ -340,14 +379,18 @@ export class Vehicle {
     let tp = Math.atan2(hf - hb, s.wheelbase);
     let tr = Math.atan2(hl - hr, s.width);
     // Náklon ze setrvačnosti.
-    tp += -this.accel * 0.004;
-    tr += this.latAccel * (s.mass > 5000 ? 0.006 : 0.008);
+    tp += -this.accel * 0.006;
+    tr += this.latAccel * (s.mass > 5000 ? 0.007 : 0.011);
     if (this.airborne) {
       tp = this.pitch;
       tr = this.roll;
     }
-    const k = Math.min(1, dt * 8);
-    this.pitch += (tp - this.pitch) * k;
-    this.roll += (tr - this.roll) * k;
+    // Karoserie na pružinách: tlumený kmit kolem cílového náklonu.
+    const kS = s.mass > 5000 ? 30 : 60;
+    const cS = s.mass > 5000 ? 7 : 9;
+    this.pitchVel += (kS * (tp - this.pitch) - cS * this.pitchVel) * dt;
+    this.rollVel += (kS * (tr - this.roll) - cS * this.rollVel) * dt;
+    this.pitch += this.pitchVel * dt;
+    this.roll += this.rollVel * dt;
   }
 }

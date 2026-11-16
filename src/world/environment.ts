@@ -20,6 +20,13 @@ export class Environment {
   private rain: THREE.LineSegments;
   private snow: THREE.Points;
   private sunDir = new THREE.Vector3();
+  /** Odrazy oblohy: vlastní scéna se samotnou oblohou převedená na environment mapu. */
+  private envScene = new THREE.Scene();
+  private envSky = new Sky();
+  private pmrem: THREE.PMREMGenerator;
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  private envKey = '';
+  private envT = 0;
   private fogDay = new THREE.Color();
 
   constructor(private scene: THREE.Scene, private renderer: THREE.WebGLRenderer) {
@@ -30,6 +37,15 @@ export class Environment {
     u.mieCoefficient.value = 0.004;
     u.mieDirectionalG.value = 0.8;
     scene.add(this.sky);
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    this.envSky.scale.setScalar(1000);
+    this.envScene.add(this.envSky);
+    // Spodní polokoule: tlumená barva krajiny, aby odrazy dole nebyly černé.
+    const ground = new THREE.Mesh(
+      new THREE.SphereGeometry(900, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x55603f, side: THREE.BackSide }),
+    );
+    this.envScene.add(ground);
     scene.add(this.hemi);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -68,6 +84,27 @@ export class Environment {
     this.snow.frustumCulled = false;
     this.snow.visible = false;
     scene.add(this.snow);
+  }
+
+  /** Přegeneruje environment mapu z aktuální oblohy, když se znatelně změnil čas nebo počasí. */
+  private updateEnvMap(dt: number, day: number, overcast: number) {
+    this.envT -= dt;
+    const key = `${Math.round(this.time * 6)}|${this.weather}|${this.season}`;
+    if (key === this.envKey || this.envT > 0) return;
+    this.envKey = key;
+    this.envT = 2;
+    const src = this.sky.material.uniforms;
+    const dst = this.envSky.material.uniforms;
+    for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'cloudCoverage', 'cloudDensity']) dst[k].value = src[k].value;
+    dst.sunPosition.value.copy(src.sunPosition.value);
+    dst.showSunDisc.value = 0;
+    const g = this.envScene.children[1] as THREE.Mesh;
+    (g.material as THREE.MeshBasicMaterial).color.setRGB(0.25 + day * 0.12, 0.28 + day * 0.14, 0.22 + day * 0.08).multiplyScalar(1 - overcast * 0.3);
+    const rt = this.pmrem.fromScene(this.envScene, 0, 1, 2000);
+    this.scene.environment = rt.texture;
+    this.scene.environmentIntensity = 0.03 + day * 0.07;
+    this.envRT?.dispose();
+    this.envRT = rt;
   }
 
   setShadows(on: boolean) {
@@ -134,6 +171,8 @@ export class Environment {
     this.renderer.toneMappingExposure = 0.85 - day * 0.15;
     this.sky.visible = this.weather !== 'mlha';
     this.scene.background = this.weather === 'mlha' || this.night > 0.9 ? fog.color : null;
+
+    this.updateEnvMap(dt, day, overcast);
 
     // Srážky sledují kameru.
     this.rain.visible = this.weather === 'déšť';

@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TILE_M, tileKey } from '../geo';
 import { gridHeight, type HeightGrid } from './heightgrid';
 import { RoadGraph } from './roadgraph';
-import { facadeTextures, pathTexture, railTexture, roadTexture } from './textures';
+import { facadeTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
 import type { Colliders, MeshArrays, NamedPoint, PlacePoint, StreetLine, TileData, TileKind, TileRequest } from './types';
 import TileWorker from './tileWorker?worker';
 
@@ -136,6 +136,18 @@ diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.75, 0.88, 1.0
 float snowK = uSnowAmount * smoothstep(uSnowLine - 60.0, uSnowLine + 60.0, vWY) * smoothstep(0.55, 0.85, vUp);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), snowK);
 diffuseColor.rgb *= 1.0 - uWet * 0.25;`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+${vegetation ? `if (isWater > 0.5) {
+  // Hladká hladina s jemnými vlnkami místo plošek terénu.
+  vec2 wp = vWXZ * 0.35;
+  float n1 = vnoise(wp + vec2(uSnowLine * 0.0, 0.0)) - 0.5;
+  float n2 = vnoise(wp * 1.7 + 13.1) - 0.5;
+  vec3 wn = normalize(vec3(n1 * 0.12, 1.0, n2 * 0.12));
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+}` : ''}`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -280,7 +292,8 @@ export class World {
   tileUrl = '';
   quality: Quality = QUALITY['střední'];
   onTileLoaded: ((key: string) => void) | null = null;
-  stats = { nearLoaded: 0, farLoaded: 0, pending: 0, errors: 0 };
+  stats = { nearLoaded: 0, farLoaded: 0, pending: 0, errors: 0, nearMs: 0, nearCount: 0 };
+  private sentAt = new Map<number, number>();
 
   private workers: Worker[] = [];
   private busy: boolean[] = [];
@@ -299,6 +312,8 @@ export class World {
     rail: THREE.MeshStandardMaterial;
     bridge: THREE.MeshStandardMaterial;
     tree: THREE.MeshStandardMaterial;
+    walk: THREE.MeshStandardMaterial;
+    shop: THREE.MeshStandardMaterial;
     lamp: THREE.MeshStandardMaterial;
     glow: THREE.PointsMaterial;
   };
@@ -331,6 +346,14 @@ export class World {
       rail: roadMat(railTexture(), 'rail', 1),
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
       tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
+      walk: roadMat(sidewalkTexture(), 'walk', 2),
+      shop: (() => {
+        const t = shopTexture();
+        return new THREE.MeshStandardMaterial({
+          vertexColors: true, map: t.map, roughness: 0.6, side: THREE.DoubleSide,
+          emissive: new THREE.Color(1, 0.88, 0.65), emissiveMap: t.emissive, emissiveIntensity: 0,
+        });
+      })(),
       lamp: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: new THREE.Color(1, 0.85, 0.5), emissiveIntensity: 0 }),
       glow: new THREE.PointsMaterial({
         map: glowTexture(), size: 9, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false,
@@ -484,6 +507,7 @@ export class World {
       const r = this.queue.shift()!;
       this.busy[i] = true;
       this.reqs.set(r.id, r);
+      this.sentAt.set(r.id, performance.now());
       this.workers[i].postMessage(r);
     }
   }
@@ -491,6 +515,12 @@ export class World {
   private onTile(worker: number, d: TileData) {
     this.busy[worker] = false;
     this.reqs.delete(d.id);
+    const t0 = this.sentAt.get(d.id);
+    this.sentAt.delete(d.id);
+    if (t0 !== undefined && d.kind === 'near' && !d.error) {
+      this.stats.nearMs += performance.now() - t0;
+      this.stats.nearCount++;
+    }
     const key = tileKey(d.z, d.x, d.y);
     if (this.pending.get(key) !== d.id) {
       // Mezitím zrušeno.
@@ -560,6 +590,8 @@ export class World {
     add(d.roadsMarked, this.mats.marked, false, true, 'roads');
     add(d.roadsPlain, this.mats.plain, false, true, 'roads');
     add(d.paths, this.mats.path, false, true, 'paths');
+    add(d.sidewalks, this.mats.walk, false, true, 'sidewalks');
+    add(d.shops, this.mats.shop, true, true, 'shops');
     add(d.rails, this.mats.rail, false, true, 'rails');
     add(d.bridgeSides, this.mats.bridge, false, true, 'bridges');
     if (d.trees && d.trees.length) {

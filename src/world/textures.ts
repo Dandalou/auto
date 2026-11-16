@@ -93,6 +93,78 @@ export function roadTexture(marked: boolean): THREE.CanvasTexture {
   return t;
 }
 
+/** Dlažba chodníku: u = příčně (2,4 m), v = délka (8 m na opakování). */
+export function sidewalkTexture(): THREE.CanvasTexture {
+  const { c, ctx } = canvas(64, 256);
+  ctx.fillStyle = '#c4c0b6';
+  ctx.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 600; i++) {
+    const v = 175 + Math.random() * 35;
+    ctx.fillStyle = `rgba(${v},${v - 3},${v - 10},0.5)`;
+    ctx.fillRect(Math.random() * 64, Math.random() * 256, 2, 2);
+  }
+  ctx.strokeStyle = 'rgba(120,115,105,0.35)';
+  ctx.lineWidth = 1;
+  for (let y = 0; y < 256; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(64, y + 0.5);
+    ctx.stroke();
+  }
+  for (const x of [21, 42]) {
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, 256);
+    ctx.stroke();
+  }
+  // Světlejší obrubník u kraje.
+  ctx.fillStyle = '#dcd8cf';
+  ctx.fillRect(0, 0, 3, 256);
+  ctx.fillRect(61, 0, 3, 256);
+  return finish(c);
+}
+
+/** Výlohy v přízemí: jedna dlaždice = 5,5 m šířky × celé přízemí. */
+export function shopTexture(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
+  const W = 256, H = 192;
+  const { c, ctx } = canvas(W, H);
+  const e = canvas(W, H);
+  e.ctx.fillStyle = '#000';
+  e.ctx.fillRect(0, 0, W, H);
+  e.ctx.fillStyle = '#ffe2a8';
+  e.ctx.fillRect(22, 62, 138, H - 70);
+  e.ctx.fillStyle = '#fff6e0';
+  e.ctx.fillRect(10, 18, W - 20, 26);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  // Pás pro nápis.
+  const signs = ['#7a2f2a', '#2f4f6f', '#3f5f3a', '#6a5a2a', '#4a3a5a'];
+  ctx.fillStyle = signs[Math.floor(Math.random() * signs.length)];
+  ctx.fillRect(10, 18, W - 20, 26);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (let i = 0; i < 8; i++) ctx.fillRect(24 + i * 26, 27, 16, 8);
+  // Výloha.
+  ctx.fillStyle = '#3a3f46';
+  ctx.fillRect(16, 56, 150, H - 56);
+  ctx.fillStyle = '#5d6f80';
+  ctx.fillRect(22, 62, 138, H - 70);
+  ctx.fillStyle = 'rgba(220,235,245,0.35)';
+  ctx.fillRect(22, 62, 60, H - 70);
+  ctx.fillStyle = '#3a3f46';
+  ctx.fillRect(89, 62, 4, H - 70);
+  // Dveře.
+  ctx.fillStyle = '#3a3f46';
+  ctx.fillRect(180, 56, 60, H - 56);
+  ctx.fillStyle = '#6a5040';
+  ctx.fillRect(186, 62, 48, H - 62);
+  ctx.fillStyle = '#d9c9a0';
+  ctx.fillRect(226, 120, 4, 10);
+  // Sokl.
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0, H - 6, W, 6);
+  return { map: finish(c), emissive: finish(e.c) };
+}
+
 export function pathTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 64);
   ctx.fillStyle = '#ddd2b6';

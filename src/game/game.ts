@@ -1,7 +1,11 @@
 // Hlavní herní smyčka: svět, hráč (auto/autobus/chůze), kamera, práce, firma, ukládání.
 
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { CITIES, lonLatToWorld, worldToLonLat } from '../geo';
 import { Environment } from '../world/environment';
 import { QUALITY, World } from '../world/world';
@@ -53,6 +57,11 @@ export class Game {
   private navTarget: { x: number; z: number } | null = null;
   private marker: THREE.Mesh;
   private camYaw = 0;
+  private camHeading = 0;
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
+  /** Dodatečné zpracování obrazu (střední a vysoká kvalita). */
+  post = false;
   private camPitch = 0.28;
   private camDist = 1;
   private camPos = new THREE.Vector3();
@@ -78,9 +87,6 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.35;
     this.world = new World(this.renderer);
     this.scene.add(this.world.root);
     this.env = new Environment(this.scene, this.renderer);
@@ -157,6 +163,8 @@ export class Game {
     const q = QUALITY[s.quality] ?? QUALITY['střední'];
     if (this.world.quality !== q) this.world.setQuality(q);
     this.env.setShadows(q.shadows);
+    this.post = q.shadows;
+    if (this.post && !this.composer) this.setupComposer();
     this.env.season = s.season;
     if (s.weather !== 'skutečné') this.env.weather = s.weather;
     else this.weatherT = 0;
@@ -167,10 +175,36 @@ export class Game {
     if (this.pedestrians) this.pedestrians.max = q.radius >= 2 ? 30 : 15;
   }
 
+  private setupComposer() {
+    const c = new EffectComposer(this.renderer);
+    c.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.2, 0.5, 0.88);
+    c.addPass(this.bloom);
+    c.addPass(new OutputPass());
+    // Jemná vinětace a teplejší barevné ladění.
+    c.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main(){
+          vec4 c = texture2D(tDiffuse, vUv);
+          vec2 d = vUv - 0.5;
+          float vig = smoothstep(0.85, 0.25, length(d * vec2(1.0, 0.8)));
+          c.rgb *= mix(0.82, 1.0, vig);
+          c.rgb = mix(c.rgb, c.rgb * vec3(1.03, 1.0, 0.96), 0.6);
+          gl_FragColor = c;
+        }`,
+    }));
+    this.composer = c;
+    this.resize();
+  }
+
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const touch = matchMedia('(pointer: coarse)').matches;
@@ -501,6 +535,7 @@ export class Game {
     this.updateCamera(dt);
     this.env.update(dt, this.camera.position, this.focus());
     this.world.mats.walls.emissiveIntensity = this.env.night * 1.4;
+    this.world.mats.shop.emissiveIntensity = this.env.night * 1.6;
     this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.setSeason(this.env.season);
@@ -512,7 +547,10 @@ export class Game {
       this.updateHud();
     }
     this.minimap.draw(this);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer && this.post) {
+      this.bloom!.strength = 0.12 + this.env.night * 0.55;
+      this.composer.render();
+    } else this.renderer.render(this.scene, this.camera);
     this.updateLabels(dt);
     this.input.endFrame();
   }
@@ -743,7 +781,7 @@ export class Game {
     m.brakeMat.emissiveIntensity = ax.brake > 0.1 && v.vF > 0.3 ? 3 : night > 0.35 ? 1 : 0.2;
     this.state.stats.distance += Math.abs(v.vF) * dt;
     this.audio.update(v.rpm, ax.throttle, v.speed, v.spec.mass > 5000, this.env.weather === 'déšť', true);
-    this.audio.squeal(v.airborne ? 0 : Math.max(0, (Math.abs(v.vL) - 1.5) / 4) + (ax.handbrake && v.speed > 4 ? 0.5 : 0));
+    this.audio.squeal(v.airborne || v.speed < 3 ? 0 : Math.max(0, v.slip - 0.35) * 1.4);
     this.walker.mesh.visible = false;
     m.root.visible = this.state.settings.camera !== 1 || v.spec.mass > 5000;
   }
@@ -791,7 +829,23 @@ export class Game {
     if (i.wheel) this.camDist = Math.max(0.4, Math.min(4, this.camDist * (1 + i.wheel * 0.12)));
     const mode = this.state.settings.camera;
     const v = this.vehicle;
-    const heading = this.walking ? this.walker.heading : v.heading;
+    let heading = this.walking ? this.walker.heading : v.heading;
+    // Kamera se plynule stáčí za vozem; ve smyku se dívá spíš ve směru pohybu.
+    if (!this.walking && v.speed > 3) {
+      const [vfx, vfz] = v.forward();
+      const mx = vfx * v.vF + -vfz * v.vL, mz = vfz * v.vF + vfx * v.vL;
+      const velH = Math.atan2(mx, -mz);
+      let dv = velH - heading;
+      while (dv > Math.PI) dv -= Math.PI * 2;
+      while (dv < -Math.PI) dv += Math.PI * 2;
+      if (v.vF > 0) heading += dv * 0.45;
+    }
+    let dh = heading - this.camHeading;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    if (!this.camInit || Math.abs(dh) > 2.5) this.camHeading = heading;
+    else this.camHeading += dh * Math.min(1, dt * (this.walking ? 6 : 3.2));
+    heading = this.camHeading;
     const target = this.focus();
     const yaw = heading + this.camYaw;
     const fx = Math.sin(yaw), fz = -Math.cos(yaw);
@@ -816,7 +870,7 @@ export class Game {
       return;
     }
     const base = (this.walking ? 4.5 : Math.max(7, v.spec.length * 1.25)) * (this.camera.aspect < 1 ? 1.5 : 1);
-    const dist = base * this.camDist * (mode === 2 ? 3.2 : 1);
+    const dist = base * this.camDist * (mode === 2 ? 3.2 : 1) * (this.walking ? 1 : 1 + Math.min(0.25, v.speed * 0.006));
     const pitch = mode === 2 ? Math.max(this.camPitch, 0.7) : this.camPitch;
     desired = target.clone().add(new THREE.Vector3(-fx * dist * Math.cos(pitch), dist * Math.sin(pitch) + (this.walking ? 1.6 : v.spec.height * 0.6), -fz * dist * Math.cos(pitch)));
     // Nepodlézt pod terén.

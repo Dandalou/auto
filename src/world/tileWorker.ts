@@ -536,6 +536,8 @@ interface BuildCtx {
   roofs: MeshBuf;
   edges: FloatBuf;
   bpts: FloatBuf;
+  /** Výlohy v přízemí. */
+  shops: MeshBuf;
   /** Výška povrchu nad terénem (DMP − DMR) z ČÚZK, mřížka cn × cn, nebo null. */
   canopy: Float32Array | null;
   cn: number;
@@ -573,6 +575,7 @@ function measuredHeight(b: BuildCtx, ring: number[][]): number {
 
 function addWall(
   b: BuildCtx, ax: number, az: number, bx: number, bz: number, y0: number, y1: number, u0: number, col: number[],
+  shopTop = 0,
 ): number {
   const dx = bx - ax;
   const dz = bz - az;
@@ -596,6 +599,21 @@ function addWall(
     w.vert(ax, yb, az, nx, 0, nz, u0, vb, cb);
     w.vert(bx, yb, bz, nx, 0, nz, u1, vb, cb);
   };
+  if (shopTop > y0 + 1 && shopTop < y1) {
+    // Přízemí s výlohami (vlastní textura), nad ním běžná fasáda.
+    const sc = col.map((c) => 0.35 + c * 0.65);
+    const su0 = (u0 * 13.2) / 5.5, su1 = (u1 * 13.2) / 5.5;
+    const S = b.shops;
+    const vs = 0;
+    S.vert(ax, y0, az, nx, 0, nz, su0, vs, sc);
+    S.vert(bx, shopTop, bz, nx, 0, nz, su1, 1, sc);
+    S.vert(bx, y0, bz, nx, 0, nz, su1, vs, sc);
+    S.vert(ax, y0, az, nx, 0, nz, su0, vs, sc);
+    S.vert(ax, shopTop, az, nx, 0, nz, su0, 1, sc);
+    S.vert(bx, shopTop, bz, nx, 0, nz, su1, 1, sc);
+    q(shopTop, y1, (shopTop - y0) / 12, v1, col, col);
+    return u1;
+  }
   q(y0, ym, v0, vm, dark, col);
   if (y1 > ym + 0.01) q(ym, y1, vm, v1, col, col);
   return u1;
@@ -861,13 +879,15 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       if (bbP && measured) wallH = Math.max(2.4, ph - Math.min(7.5, bbP.hs * 0.8));
       const hgtEff = ph;
       const y0 = minH > 0 ? top + minH : base - 0.5;
+      // Výlohy: vyšší městské domy (ne přístavky, ne panelové věže).
+      const shopTop = minH < 2.5 && ph >= 9 && ph <= 40 && areaM > 120 && seed % 10 < 7 ? top + 4.3 : 0;
       const y1 = top + wallH;
       b.bpts.push(cx * s, cy * s, areaM * hgtEff);
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
-          u = addWall(b, ax, az, bx, bz, y0, y1, u, col);
+          u = addWall(b, ax, az, bx, bz, y0, y1, u, col, shopTop);
           if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
         }
       }
@@ -916,8 +936,77 @@ interface RoadCtx {
   paths: MeshBuf;
   sides: MeshBuf;
   rails: MeshBuf;
+  walks: MeshBuf;
+  urban: (x: number, z: number) => boolean;
   bridges: FloatBuf;
   lines: RoadLine[];
+}
+
+/** Hustota zástavby z těžišť budov – rozhoduje o chodnících a lampách. */
+function makeUrban(bpts: Float32Array, sizeM: number): (x: number, z: number) => boolean {
+  const G = 48;
+  const cs = sizeM / G;
+  const dens = new Uint16Array(G * G);
+  for (let i = 0; i < bpts.length; i += 3) {
+    const gx = Math.floor(bpts[i] / cs), gz = Math.floor(bpts[i + 1] / cs);
+    if (gx >= 0 && gz >= 0 && gx < G && gz < G) dens[gz * G + gx]++;
+  }
+  return (x: number, z: number) => {
+    const gx = Math.floor(x / cs), gz = Math.floor(z / cs);
+    let n = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const a = gx + dx, b = gz + dz;
+      if (a >= 0 && b >= 0 && a < G && b < G) n += dens[b * G + a];
+    }
+    return n >= 4;
+  };
+}
+
+/** Rovnoběžka s lomenou čarou ve vzdálenosti d (kladně doleva). */
+function offsetLine(pts: number[][], d: number): number[][] {
+  const n = pts.length;
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    let dx = b[0] - a[0], dz = b[1] - a[1];
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l;
+    dz /= l;
+    let sc = 1;
+    if (i > 0 && i < n - 1) {
+      const d1x = p[0] - a[0], d1z = p[1] - a[1];
+      const l1 = Math.hypot(d1x, d1z) || 1;
+      const cos = (d1x / l1) * dx + (d1z / l1) * dz;
+      sc = 1 / Math.max(0.5, Math.sqrt((1 + cos) / 2));
+    }
+    return [p[0] + dz * d * sc, p[1] - dx * d * sc];
+  });
+}
+
+const SIDEWALK = new Set(['minor', 'tertiary', 'secondary', 'primary', 'busway']);
+
+/** Chodníky po obou stranách ulice a obrubník směrem k vozovce. */
+function sidewalks(r: RoadCtx, pts: number[][], hw: number, roadY: number) {
+  const w = 2.4;
+  for (const side of [1, -1]) {
+    const mid = offsetLine(pts, side * (hw + w / 2));
+    ribbon(r.walks, mid, w, roadY + 0.16, null, r, false, false);
+    // Obrubník.
+    const edge = offsetLine(pts, side * hw);
+    for (let i = 0; i + 1 < edge.length; i++) {
+      const p = edge[i], q = edge[i + 1];
+      const yp = r.height(p[0], p[1]), yq = r.height(q[0], q[1]);
+      const dx = q[0] - p[0], dz = q[1] - p[1];
+      const l = Math.hypot(dx, dz) || 1;
+      const nx = (-dz / l) * side, nz = (dx / l) * side;
+      const m = r.walks;
+      m.vert(p[0], yp + roadY, p[1], nx, 0, nz, 0.02, 0);
+      m.vert(q[0], yq + roadY, q[1], nx, 0, nz, 0.02, 0);
+      m.vert(q[0], yq + roadY + 0.16, q[1], nx, 0, nz, 0.02, 0.02);
+      m.vert(p[0], yp + roadY, p[1], nx, 0, nz, 0.02, 0);
+      m.vert(q[0], yq + roadY + 0.16, q[1], nx, 0, nz, 0.02, 0.02);
+      m.vert(p[0], yp + roadY + 0.16, p[1], nx, 0, nz, 0.02, 0.02);
+    }
+  }
 }
 
 function ribbon(
@@ -1184,6 +1273,10 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
           } else {
             const m = cls === 'path' ? r.paths : MARKED.has(cls) ? r.marked : r.plain;
             ribbon(m, pts, width, 0.22 + prio * 0.025, heights, r, bridge, !bridge);
+            if (!bridge && SIDEWALK.has(cls) && pts.length > 1) {
+              const mid = pts[Math.floor(pts.length / 2)];
+              if (r.urban(mid[0], mid[1])) sidewalks(r, pts, width / 2, 0.22 + prio * 0.025);
+            }
           }
           if (bridge && heights && !isRail) {
             for (let i = 0; i + 1 < pts.length; i++) {
@@ -1540,7 +1633,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   if (near && vt) {
     const s = sizeM / EXTENT;
     const bctx: BuildCtx = {
-      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024),
+      s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
     };
     buildBuildings(vt, bctx);
@@ -1551,7 +1644,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
         return Number.isNaN(v) ? sampler.sampleSafe((x + lx / sizeM) * scale, (y + lz / sizeM) * scale) : v;
       },
       marked: new MeshBuf(), plain: new MeshBuf(), paths: new MeshBuf(), sides: new MeshBuf(),
-      rails: new MeshBuf(), bridges: new FloatBuf(256), lines: [],
+      rails: new MeshBuf(), walks: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
     };
     buildRoads(vt, rctx);
     if (!bctx.walls.empty) data.walls = bctx.walls.arrays(true, true);
@@ -1559,9 +1652,11 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!rctx.marked.empty) data.roadsMarked = rctx.marked.arrays(true, false);
     if (!rctx.plain.empty) data.roadsPlain = rctx.plain.arrays(true, false);
     if (!rctx.paths.empty) data.paths = rctx.paths.arrays(true, false);
+    if (!rctx.walks.empty) data.sidewalks = rctx.walks.arrays(true, false);
+    if (!bctx.shops.empty) data.shops = bctx.shops.arrays(true, true);
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
-    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails]) addMesh(m);
+    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops]) addMesh(m);
     let circles: number[] = [];
     if (req.treeBudget > 0) {
       const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);
