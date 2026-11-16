@@ -31,6 +31,40 @@ interface AICar {
   r: number;
 }
 
+function glowTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d')!;
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.2, 'rgba(255,255,255,0.6)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const GLOW = glowTexture();
+/** Sdílené materiály záře světel (průhlednost se mění podle noci). */
+export const LIGHT_GLOW = {
+  head: new THREE.SpriteMaterial({ map: GLOW, color: 0xfff2d6, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }),
+  tail: new THREE.SpriteMaterial({ map: GLOW, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }),
+};
+
+/** Záře předních a zadních světel na model vozidla. */
+export function addLightGlow(model: VehicleModel, spec: VehicleSpec) {
+  const L = spec.length, W = spec.width;
+  const y = spec.mass > 5000 ? 0.85 : 0.75;
+  for (const sx of [-1, 1]) {
+    const h = new THREE.Sprite(LIGHT_GLOW.head);
+    h.position.set(sx * (W / 2 - 0.3), y, -L / 2 - 0.15);
+    h.scale.set(1.4, 1.4, 1);
+    const t = new THREE.Sprite(LIGHT_GLOW.tail);
+    t.position.set(sx * (W / 2 - 0.3), y + 0.05, L / 2 + 0.1);
+    t.scale.set(0.9, 0.9, 1);
+    model.body.add(h, t);
+  }
+}
+
 const COLORS = [0xd8d8d8, 0x2a2a2a, 0x8a1c1c, 0x1f3f7a, 0x6b6e72, 0xf0f0f0, 0x3b5e3b, 0xb8a27a, 0x5a2f6b, 0xc46a1a];
 
 export class Traffic {
@@ -70,6 +104,7 @@ export class Traffic {
     const spec = SPECS[type];
     const model = buildVehicleModel(spec, tram ? 0xc8202a : type === 'taxi' ? 0xf3d23a : COLORS[Math.floor(Math.random() * COLORS.length)], false);
     if (tram) updateSign(model, String(1 + Math.floor(Math.random() * 26)), '');
+    addLightGlow(model, spec);
     this.group.add(model.root);
     const s = (forward ? near.t : 1 - near.t) * e.len;
     const car: AICar = {

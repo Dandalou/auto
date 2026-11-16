@@ -424,6 +424,22 @@ export function pathTexture(): THREE.CanvasTexture {
   return finish(c);
 }
 
+/** Tramvajová trať ve vozovce: dvě žlábkové kolejnice v asfaltu/dlažbě, průhledné okraje. */
+export function tramRailTexture(): THREE.CanvasTexture {
+  const { c, ctx } = canvas(64, 64);
+  ctx.clearRect(0, 0, 64, 64);
+  // Pás kolem kolejnic (tmavší, vyspravovaný asfalt).
+  ctx.fillStyle = 'rgba(95,98,104,0.55)';
+  ctx.fillRect(8, 0, 48, 64);
+  for (const x of [17, 45]) {
+    ctx.fillStyle = '#3a3c40';
+    ctx.fillRect(x - 3, 0, 6, 64);
+    ctx.fillStyle = '#b8bcc2';
+    ctx.fillRect(x - 1.5, 0, 2, 64);
+  }
+  return finish(c);
+}
+
 export function railTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 128);
   ctx.fillStyle = '#6d6459';

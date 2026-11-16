@@ -16,7 +16,7 @@ import { Input } from './input';
 import { BusJob, type Job, type JobCtx } from './jobs';
 import { buildPerson, buildVehicleModel, updateSign, type VehicleModel } from './models';
 import { defaultState, formatMoney, level, loadState, saveState, type SaveState } from './state';
-import { Traffic } from './traffic';
+import { Traffic, LIGHT_GLOW, addLightGlow } from './traffic';
 import { Pedestrians } from './pedestrians';
 import { loadPid } from './pid';
 import { Signals } from './signals';
@@ -113,6 +113,7 @@ export class Game {
     this.applySettings();
     this.vehicle = new Vehicle(SPECS[this.state.vehicle]);
     this.model = buildVehicleModel(this.vehicle.spec, VEHICLE_COLORS[this.state.vehicle], true);
+    addLightGlow(this.model, this.vehicle.spec);
     this.scene.add(this.model.root);
     this.scene.add(this.walker.mesh);
     this.walker.mesh.visible = false;
@@ -277,6 +278,7 @@ export class Game {
     nv.place(pos.x, pos.z, pos.heading, this.world);
     this.vehicle = nv;
     this.model = buildVehicleModel(nv.spec, VEHICLE_COLORS[type], true);
+    addLightGlow(this.model, nv.spec);
     this.scene.add(this.model.root);
     if (!rental) this.state.vehicle = type;
     this.rental = rental;
@@ -605,6 +607,8 @@ export class Game {
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.mats.pool.opacity = Math.min(0.3, Math.max(0, this.env.night - 0.35) * 0.5);
     this.world.mats.pool.visible = this.env.night > 0.35;
+    LIGHT_GLOW.head.opacity = Math.max(0, this.env.night - 0.3) * 1.1;
+    LIGHT_GLOW.tail.opacity = Math.max(0, this.env.night - 0.3) * 1.0;
     this.world.setSeason(this.env.season);
     this.adaptPerformance(dt);
     this.updateRealWorld(dt);

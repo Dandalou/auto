@@ -80,6 +80,7 @@ export interface TileData {
   paths?: MeshArrays;
   bridgeSides?: MeshArrays;
   rails?: MeshArrays;
+  tramRails?: MeshArrays;
   sidewalks?: MeshArrays;
   crossings?: MeshArrays;
   shops?: MeshArrays;

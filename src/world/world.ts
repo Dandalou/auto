@@ -6,7 +6,7 @@ import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferG
 import { TILE_M, tileKey } from '../geo';
 import { gridHeight, type HeightGrid } from './heightgrid';
 import { RoadGraph } from './roadgraph';
-import { zebraTexture, facadeTextures, garageTextures, hallTextures, historicTextures, houseTextures, modernTextures, officeTextures, panelTextures, woodTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
+import { tramRailTexture, zebraTexture, facadeTextures, garageTextures, hallTextures, historicTextures, houseTextures, modernTextures, officeTextures, panelTextures, woodTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
 import type { Colliders, MeshArrays, NamedPoint, PlacePoint, StreetLine, TileData, TileKind, TileRequest } from './types';
 import TileWorker from './tileWorker?worker';
 
@@ -390,6 +390,7 @@ export class World {
     walk: THREE.MeshStandardMaterial;
     shop: THREE.MeshStandardMaterial;
     zebra: THREE.MeshStandardMaterial;
+    tramRail: THREE.MeshStandardMaterial;
     panel: THREE.MeshStandardMaterial;
     house: THREE.MeshStandardMaterial;
     hall: THREE.MeshStandardMaterial;
@@ -430,6 +431,13 @@ export class World {
       plain: roadMat(roadTexture(false), 'road2', 2),
       path: roadMat(pathTexture(), 'path', 1),
       rail: roadMat(railTexture(), 'rail', 1),
+      tramRail: (() => {
+        const m = roadMat(tramRailTexture(), 'tramrail', 5);
+        m.transparent = true;
+        m.depthWrite = false;
+        m.metalness = 0.2;
+        return m;
+      })(),
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
       tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }),
       walk: roadMat(sidewalkTexture(), 'walk', 2),
@@ -828,6 +836,7 @@ export class World {
       add(d.signs, sm, false, true, 'signs');
     }
     add(d.rails, this.mats.rail, false, true, 'rails');
+    add(d.tramRails, this.mats.tramRail, false, true, 'rails');
     add(d.bridgeSides, this.mats.bridge, false, true, 'bridges');
     if (d.trees && d.trees.length) {
       const t = d.trees;

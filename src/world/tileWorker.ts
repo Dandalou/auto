@@ -1366,6 +1366,8 @@ interface RoadCtx {
   rails: MeshBuf;
   walks: MeshBuf;
   crossings: MeshBuf;
+  /** Tramvajové koleje zapuštěné ve vozovce. */
+  tramRails: MeshBuf;
   /** Leží bod na vozovce (jakékoli silnice)? */
   carriage?: (x: number, z: number) => boolean;
   urban: (x: number, z: number) => boolean;
@@ -1805,7 +1807,9 @@ function buildRoads(vt: VectorTile, r: RoadCtx) {
         const prio = ROAD_PRIO[cls] ?? 1;
         if (!tunnel) {
           if (isRail) {
-            ribbon(r.rails, pts, 3.0, 0.12, heights, r, false);
+            // Tramvaj v zástavbě: kolejnice zapuštěné do vozovky (bez pražců).
+            const street = cls === 'transit' && pts.length > 1 && r.urban(pts[Math.floor(pts.length / 2)][0], pts[Math.floor(pts.length / 2)][1]);
+            ribbon(street ? r.tramRails : r.rails, pts, street ? 2.6 : 3.0, street ? 0.27 : 0.12, heights, r, false);
           } else {
             const m = cls === 'path' ? r.paths : MARKED.has(cls) ? r.marked : r.plain;
             ribbon(m, pts, width, 0.22 + prio * 0.025, heights, r, bridge, !bridge);
@@ -2322,7 +2326,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
         return Number.isNaN(v) ? sampler.sampleSafe((x + lx / sizeM) * scale, (y + lz / sizeM) * scale) : v;
       },
       marked: new MeshBuf(), plain: new MeshBuf(), paths: new MeshBuf(), sides: new MeshBuf(),
-      rails: new MeshBuf(), walks: new MeshBuf(), crossings: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
+      rails: new MeshBuf(), walks: new MeshBuf(), crossings: new MeshBuf(), tramRails: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
     };
     buildRoads(vt, rctx);
     mark('silnice');
@@ -2340,7 +2344,8 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!bctx.halls.empty) data.halls = bctx.halls.arrays(true, true);
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
-    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls, data.crossings]) addMesh(m);
+    if (!rctx.tramRails.empty) data.tramRails = rctx.tramRails.arrays(true, false);
+    for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls, data.crossings, data.tramRails]) addMesh(m);
     prof.signs = bctx.atlas ? bctx.atlas.n : 0;
     for (const [k, v] of Object.entries(KIND_STATS)) prof[`k_${k}`] = v;
     for (const k of Object.keys(KIND_STATS)) delete KIND_STATS[k];
