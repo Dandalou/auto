@@ -1007,7 +1007,7 @@ export class Game {
     this.audio.squeal(v.airborne || v.speed < 3 ? 0 : Math.max(0, v.slip - 0.35) * 1.4);
     this.walker.mesh.visible = false;
     // Z kabiny: osobní auto skryté; kolejová vozidla také (kamera je za čelním sklem modelu).
-    m.root.visible = !(this.state.settings.camera === 1 || this.metro) || (v.spec.mass > 5000 && !this.isRail());
+    m.root.visible = !(this.state.settings.camera === 1 || this.metro);
   }
 
   private updateWalker(dt: number, inPanel: boolean) {
