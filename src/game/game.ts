@@ -509,7 +509,14 @@ export class Game {
     const inPanel = !!currentPanel();
     this.handleKeys(inPanel);
 
-    this.world.update(this.px, this.pz);
+    {
+      // Rychlost pro přednačítání dlaždic ve směru jízdy.
+      const v = this.vehicle;
+      const [fx, fz] = v.forward();
+      const vx = this.walking ? 0 : fx * v.vF - fz * v.vL;
+      const vz = this.walking ? 0 : fz * v.vF + fx * v.vL;
+      this.world.update(this.px, this.pz, vx, vz);
+    }
     if (this.world.rebase(this.px, this.pz)) {
       this.minimap.dirty();
       this.navMeshDirty = true;

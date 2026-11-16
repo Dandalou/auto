@@ -100,4 +100,6 @@ export interface TileData {
   /** Těžiště budov: x, z, obestavěný prostor (m³). */
   buildings?: Float32Array;
   error?: string;
+  /** Doby kroků stavby (ms). */
+  prof?: Record<string, number>;
 }

@@ -294,6 +294,7 @@ export class World {
   onTileLoaded: ((key: string) => void) | null = null;
   stats = { nearLoaded: 0, farLoaded: 0, pending: 0, errors: 0, nearMs: 0, nearCount: 0 };
   private sentAt = new Map<number, number>();
+  profTotals: Record<string, number> = {};
 
   private workers: Worker[] = [];
   private busy: boolean[] = [];
@@ -416,7 +417,7 @@ export class World {
 
   // ------------------------------------------------------------ streamování
 
-  update(px: number, pz: number) {
+  update(px: number, pz: number, vx = 0, vz = 0) {
     if (!this.tileUrl) return;
     this.center = { x: px, z: pz };
     const R = this.quality.radius;
@@ -431,9 +432,23 @@ export class World {
         if (!this.near.has(k) && !this.pending.has(k)) this.request('near', 14, tx + dx, ty + dy);
       }
     }
+    // Přednačítání ve směru jízdy: dlaždice kolem bodu, kde budeme za ~25 s.
+    const sp = Math.hypot(vx, vz);
+    if (sp > 8) {
+      const look = Math.min(3000, sp * 25);
+      const ax = Math.floor((px + (vx / sp) * look) / TILE_M);
+      const ay = Math.floor((pz + (vz / sp) * look) / TILE_M);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const k = tileKey(14, ax + dx, ay + dy);
+          want.add(k);
+          if (!this.near.has(k) && !this.pending.has(k)) this.request('near', 14, ax + dx, ay + dy);
+        }
+      }
+    }
     for (const k of [...this.near.keys()]) {
       const t = this.near.get(k)!;
-      if (Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty)) > R + 1) this.unloadNear(k);
+      if (!want.has(k) && Math.max(Math.abs(t.x - tx), Math.abs(t.y - ty)) > R + 1) this.unloadNear(k);
     }
     const F = this.quality.farRadius;
     const fx = Math.floor(px / (TILE_M * 4));
@@ -453,7 +468,7 @@ export class World {
       const k = tileKey(r.z, r.x, r.y);
       const keep = r.kind === 'far'
         ? Math.max(Math.abs(r.x - fx), Math.abs(r.y - fy)) <= F + 1
-        : Math.max(Math.abs(r.x - tx), Math.abs(r.y - ty)) <= R + 1;
+        : want.has(k) || Math.max(Math.abs(r.x - tx), Math.abs(r.y - ty)) <= R + 1;
       if (!keep) this.pending.delete(k);
       return keep;
     });
@@ -525,6 +540,9 @@ export class World {
     this.reqs.delete(d.id);
     const t0 = this.sentAt.get(d.id);
     this.sentAt.delete(d.id);
+    if (d.prof && d.kind === 'near') {
+      for (const [k, v] of Object.entries(d.prof)) this.profTotals[k] = (this.profTotals[k] ?? 0) + v;
+    }
     if (t0 !== undefined && d.kind === 'near' && !d.error) {
       this.stats.nearMs += performance.now() - t0;
       this.stats.nearCount++;

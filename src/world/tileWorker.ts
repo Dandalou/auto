@@ -1626,6 +1626,14 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const { z, x, y } = req;
   const sizeM = TILE_M * 2 ** (14 - z);
   const near = req.kind === 'near';
+  // Měření doby jednotlivých kroků (pro ladění výkonu).
+  const prof: Record<string, number> = {};
+  let pt = performance.now();
+  const mark = (k: string) => {
+    const n = performance.now();
+    prof[k] = Math.round((prof[k] ?? 0) + n - pt);
+    pt = n;
+  };
   const N = near ? req.n : 64;
   const ez = near ? 13 : z - 1;
   const scale = 2 ** (ez - z) * 256;
@@ -1639,6 +1647,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
   await sampler.prepare((x - margin) * scale, (y - margin) * scale, (x + 1 + margin) * scale, (y + 1 + margin) * scale);
   const dmr = await dmrP;
+  mark('dmr+terrarium');
   const h = new Float32Array((N + 1) * (N + 1));
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
@@ -1647,6 +1656,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     }
   }
   const dmp = await dmpP;
+  mark('dmp');
   let canopy: Float32Array | null = null;
   if (dmr && dmp) {
     canopy = new Float32Array(CN * CN);
@@ -1659,9 +1669,12 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     return Number.isNaN(v) ? globalHeight(lx, lz) : v;
   };
   const vt = await vtPromise;
+  mark('vektor');
   if (near && vt) flattenRoads(vt, grid);
+  mark('srovnani');
   const seed = hashStr(`${z}/${x}/${y}`);
   const canvas = paintGround(vt, req.texSize, sizeM, seed, near);
+  mark('textura');
   const texture = canvas.transferToImageBitmap();
   const terrain = buildTerrain(grid);
   const data: TileData = { id: req.id, kind: req.kind, z, x, y, size: sizeM, n: N, heights: h, terrain, texture };
@@ -1679,6 +1692,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
       canopy, cn: CN, size: sizeM,
     };
     buildBuildings(vt, bctx);
+    mark('budovy');
     const rctx: RoadCtx = {
       s, height, globalHeight, size: sizeM,
       heightSafe: (lx: number, lz: number) => {
@@ -1689,6 +1703,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
       rails: new MeshBuf(), walks: new MeshBuf(), urban: makeUrban(bctx.bpts.out(), sizeM), bridges: new FloatBuf(256), lines: [],
     };
     buildRoads(vt, rctx);
+    mark('silnice');
     if (!bctx.walls.empty) data.walls = bctx.walls.arrays(true, true);
     if (!bctx.roofs.empty) data.roofs = bctx.roofs.arrays(false, true);
     if (!rctx.marked.empty) data.roadsMarked = rctx.marked.arrays(true, false);
@@ -1703,6 +1718,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     let circles: number[] = [];
     if (req.treeBudget > 0) {
       const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);
+      mark('stromy');
       data.trees = t.trees;
       circles = t.circles;
       transfer.push(t.trees.buffer);
@@ -1716,6 +1732,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     for (const l of rctx.lines) transfer.push(l.pts.buffer);
     data.buildings = bctx.bpts.out();
     data.lamps = buildLamps(vt, sizeM, data.buildings, height);
+    mark('ostatni');
     transfer.push(data.lamps.buffer);
     transfer.push(data.buildings.buffer);
     Object.assign(data, points(vt, s));
@@ -1723,6 +1740,8 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   } else if (vt) {
     data.places = points(vt, sizeM / EXTENT).places;
   }
+  mark('konec');
+  data.prof = prof;
   return { data, transfer };
 }
 
