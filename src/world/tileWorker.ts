@@ -435,6 +435,26 @@ function paintGround(vt: VectorTile | null, S: number, sizeM: number, seed: numb
     drawFeature(ctx, f, s, true);
     ctx.fillStyle = col;
     ctx.fill('evenodd');
+    if (cls === 'farmland' && detailed) {
+      // Řádky po obdělávání: pruhy s náhodným směrem, oříznuté tvarem pole.
+      const g0 = f.loadGeometry()[0]?.[0];
+      const h = g0 ? hashStr(`${g0.x},${g0.y}`) : 0;
+      const ang = ((h % 180) * Math.PI) / 180;
+      const gap = Math.max(2, 7 * pxPerM);
+      ctx.save();
+      ctx.clip('evenodd');
+      ctx.translate(S / 2, S / 2);
+      ctx.rotate(ang);
+      ctx.strokeStyle = (h >> 8) % 2 ? 'rgba(70,55,25,0.2)' : 'rgba(255,250,215,0.18)';
+      ctx.lineWidth = gap * 0.45;
+      ctx.beginPath();
+      for (let k = -S; k < S; k += gap) {
+        ctx.moveTo(-S, k);
+        ctx.lineTo(S, k);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   });
   each('park', (f) => {
     if (f.type !== 3) return;
