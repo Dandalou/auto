@@ -563,6 +563,10 @@ const FACADES = ['#f1e6cc', '#f0d896', '#ecc6b4', '#c8d6e2', '#f4f1ea', '#e2b27a
 const ROOFS = ['#a9503a', '#9c5a42', '#b2674a', '#77513f', '#6e7179', '#575a62', '#94463a', '#a5583e'].map(lin);
 const FLAT_ROOF = lin('#8f8c88');
 const CHIMNEY = lin('#8a4b3a');
+const ROOF_TERRACOTTA = lin('#b4573a');
+const ROOF_BROWN = lin('#8e5a44');
+const ROOF_COPPER = lin('#6ea58d');
+const ROOF_SLATE = lin('#566170');
 const HALL_COL = ['#d9dcdf', '#b9c4cf', '#e8e4dc', '#9fb3c4', '#c9cdc4'].map(lin);
 
 const COLOUR_NAMES: Record<string, string> = {
@@ -607,6 +611,85 @@ interface BuildCtx {
   shopsPoi: ShopPoi[];
   signs: MeshBuf;
   atlas: SignAtlas | null;
+  /** Letecký snímek ČÚZK (RGBA, n × n) pro barvy střech. */
+  ortho: { data: Uint8ClampedArray; n: number } | null;
+}
+
+/** Ortofoto ČÚZK pro dlaždici (barvy střech). */
+async function loadOrtho(z: number, x: number, y: number, n: number): Promise<{ data: Uint8ClampedArray; n: number } | null> {
+  const o = Math.PI * 6378137;
+  const S = (2 * o) / 2 ** z;
+  const url = `https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO/MapServer/export?bbox=${(x * S - o).toFixed(1)},${(o - (y + 1) * S).toFixed(1)},${((x + 1) * S - o).toFixed(1)},${(o - y * S).toFixed(1)}&bboxSR=3857&imageSR=3857&size=${n},${n}&format=jpg&f=image`;
+  try {
+    let cache: Cache | null = null;
+    try {
+      cache = await caches.open('ortho-v1');
+    } catch {
+      cache = null;
+    }
+    let r = cache ? await cache.match(url) : undefined;
+    if (!r) {
+      const f = await fetchRetry(url, 2);
+      if (!f || !(f.headers.get('content-type') ?? '').includes('image')) return null;
+      r = f;
+      if (cache) void cache.put(url, f.clone()).catch(() => {});
+    }
+    const bmp = await createImageBitmap(await r.blob());
+    const c = new OffscreenCanvas(n, n);
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(bmp, 0, 0, n, n);
+    bmp.close();
+    return { data: ctx.getImageData(0, 0, n, n).data, n };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Skutečná barva střechy z ortofota: medián pixelů uvnitř půdorysu (bez okrajů a stínů).
+ * Vrací lineární RGB, nebo null, když snímek chybí.
+ */
+function orthoRoofColor(b: BuildCtx, ring: number[][], cx: number, cz: number): number[] | null {
+  const o = b.ortho;
+  if (!o) return null;
+  const px = b.size / o.n;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [x, z] of ring) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+  }
+  const rs: number[] = [], gs: number[] = [], bs: number[] = [];
+  const step = Math.max(px, Math.min(x1 - x0, z1 - z0) / 6);
+  const sample = (x: number, z: number) => {
+    const i = Math.floor(x / px), j = Math.floor(z / px);
+    if (i < 0 || j < 0 || i >= o.n || j >= o.n) return;
+    const k = (j * o.n + i) * 4;
+    const R = o.data[k], G = o.data[k + 1], B = o.data[k + 2];
+    if (R + G + B < 90) return; // stín
+    rs.push(R); gs.push(G); bs.push(B);
+  };
+  for (let z = z0 + step / 2; z < z1; z += step) {
+    for (let x = x0 + step / 2; x < x1; x += step) {
+      if (distToRing(x, z, ring) < px * 1.2 || !pointInRing(x, z, ring)) continue;
+      sample(x, z);
+    }
+  }
+  if (rs.length < 2) sample(cx, cz);
+  if (!rs.length) return null;
+  const med = (a: number[]) => a.sort((p, q) => p - q)[Math.floor(a.length / 2)];
+  const r = med(rs), g = med(gs), bl = med(bs);
+  // Snímek je zašedlý oparem: rozpoznat druh krytiny a převzít jen jas.
+  const lum = (r + g + bl) / 3;
+  const k = Math.max(0.7, Math.min(1.25, lum / 135));
+  const scale = (c: number[]) => c.map((v) => Math.min(1, v * k));
+  if (g > r * 1.06 && g > bl * 0.98 && r < 150) {
+    // Zeleň: buď měděná střecha (světlejší, do modra), nebo stromy přes střechu.
+    if (bl > r * 1.02) return scale(ROOF_COPPER);
+    return null;
+  }
+  if (r > g * 1.05 && r > bl * 1.1) return scale(r > g * 1.2 ? ROOF_TERRACOTTA : ROOF_BROWN);
+  if (bl > r * 1.06) return scale(ROOF_SLATE);
+  const gr = Math.pow(Math.min(0.9, Math.max(0.25, lum / 255)), 2.2);
+  return [gr * 1.03, gr, gr * 0.97];
 }
 
 interface RuianPt {
@@ -1176,6 +1259,7 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       const house = kind === 'house';
       // Výška patra: z RÚIAN, historické domy mají vyšší patra.
       const floorH = ru && ru.floors > 0 ? Math.min(4.6, Math.max(2.5, (wallH - (shopTop ? 1.3 : 0)) / ru.floors)) : kind === 'historic' ? 3.6 : 3.0;
+      const realRoof = minH < 2.5 && areaM > 25 ? orthoRoofColor(b, ringM, cx * s, cy * s) : null;
       const target = kind === 'panel' ? b.panels : hall ? b.halls : house ? b.houses : kind && b.facades[kind] ? b.facades[kind] : undefined;
       const wallCol = hall && !custom ? HALL_COL[seed % HALL_COL.length]
         : kind === 'office' || kind === 'wood' ? [1, 1, 1]
@@ -1193,13 +1277,13 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       // Střecha: šikmá nad téměř obdélníkovým půdorysem, jinak plochá.
       let pitched = false;
       if (bbP) {
-        pitchedRoof(b, bbP, y1, seed, col, ROOFS[(seed >>> 4) % ROOFS.length]);
+        pitchedRoof(b, bbP, y1, seed, col, realRoof ?? ROOFS[(seed >>> 4) % ROOFS.length]);
         pitched = true;
       }
       const hgt2 = hgtEff;
       if (!pitched && minH < 2.5 && areaM > 80 && hgt2 <= 60 && hgt2 >= 7 && (seed % 100) < (hgt2 > 35 ? 35 : 92)) {
         const rings = [o, ...poly.holes].map((r) => r.slice(0, -1).map((q) => [q.x * s, q.y * s]));
-        const rc = ROOFS[(seed >>> 4) % ROOFS.length];
+        const rc = realRoof ?? ROOFS[(seed >>> 4) % ROOFS.length];
         pitched = mansardRoof(b, rings, y1, Math.min(4, 1.8 + hgt2 * 0.08), rc, rc.map((v) => v * 0.8));
       }
       if (!pitched) {
@@ -1211,7 +1295,7 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
           for (let i = 0; i < hole.length - 1; i++) flat.push(hole[i].x * s, hole[i].y * s);
         }
         const idx = earcut(flat, holeIdx);
-        const rc = FLAT_ROOF.map((v, i) => v * (0.9 + ((seed >>> (i * 3)) % 10) / 50));
+        const rc = realRoof ?? FLAT_ROOF.map((v, i) => v * (0.9 + ((seed >>> (i * 3)) % 10) / 50));
         for (let i = 0; i < idx.length; i += 3) {
           for (const k of [idx[i], idx[i + 2], idx[i + 1]]) {
             b.roofs.vert(flat[k * 2], y1, flat[k * 2 + 1], 0, 1, 0, 0, 0, rc);
@@ -1919,6 +2003,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const step = 256 / N;
   const cz = near && inCzBox(z, x, y);
   const dmrP = cz ? loadCuzk('dmr5g', z, x, y, CN) : Promise.resolve(null);
+  const orthoP = cz && req.texSize >= 512 ? loadOrtho(z, x, y, 768) : Promise.resolve(null);
   const ruianP = cz ? loadRuian(z, x, y, TILE_M * 2 ** (14 - z)) : Promise.resolve([] as RuianPt[]);
   const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
   await sampler.prepare((x - margin) * scale, (y - margin) * scale, (x + 1 + margin) * scale, (y + 1 + margin) * scale);
@@ -1965,6 +2050,8 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     const s = sizeM / EXTENT;
     const ruian = await ruianP;
     mark('ruian');
+    const ortho = await orthoP;
+    mark('ortofoto');
     // Provozovny z OSM (poi) pro cedule.
     const shopsPoi: ShopPoi[] = [];
     const poi = vt.layers.poi;
@@ -1988,7 +2075,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
       s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(), houses: new MeshBuf(), halls: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
       facades: { historic: new MeshBuf(), modern: new MeshBuf(), office: new MeshBuf(), garage: new MeshBuf(), wood: new MeshBuf() },
-      ruian, shopsPoi, signs: new MeshBuf(), atlas: shopsPoi.length ? new SignAtlas() : null,
+      ruian, shopsPoi, signs: new MeshBuf(), atlas: shopsPoi.length ? new SignAtlas() : null, ortho,
     };
     buildBuildings(vt, bctx);
     mark('budovy');
