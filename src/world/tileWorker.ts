@@ -1245,7 +1245,9 @@ function churchTower(b: BuildCtx, o: NonNullable<ReturnType<typeof obb>>, base: 
   const ring = [c[0], c[3], c[2], c[1], c[0]];
   const ccw = ringAreaM(ring) > 0 ? ring : [...ring].reverse();
   let u = 0;
-  for (let i = 0; i < 4; i++) u = addWall(b, ccw[i][0], ccw[i][1], ccw[i + 1][0], ccw[i + 1][1], base - 0.5, yt, u, col);
+  // Málo vysokých oken (historická fasáda s velkou výškou „patra“).
+  const fh = (yt - base) / 3.2;
+  for (let i = 0; i < 4; i++) u = addWall(b, ccw[i][0], ccw[i][1], ccw[i + 1][0], ccw[i + 1][1], base - 0.5, yt, u, col, 0, b.facades.historic, fh);
   // Římsa.
   roofBox(b, cx, cz, o.ux, o.uz, half + 0.25, half + 0.25, yt - 0.1, yt + 0.35, col.map((v) => v * 0.9));
   const R = b.roofs;
