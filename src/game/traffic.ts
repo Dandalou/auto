@@ -46,8 +46,8 @@ function glowTexture(): THREE.CanvasTexture {
 const GLOW = glowTexture();
 /** Sdílené materiály záře světel (průhlednost se mění podle noci). */
 export const LIGHT_GLOW = {
-  head: new THREE.SpriteMaterial({ map: GLOW, color: 0xfff2d6, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }),
-  tail: new THREE.SpriteMaterial({ map: GLOW, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }),
+  head: new THREE.SpriteMaterial({ map: GLOW, color: 0xfff2d6, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, toneMapped: false }),
+  tail: new THREE.SpriteMaterial({ map: GLOW, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, toneMapped: false }),
 };
 
 /** Záře předních a zadních světel na model vozidla. */
@@ -57,10 +57,10 @@ export function addLightGlow(model: VehicleModel, spec: VehicleSpec) {
   for (const sx of [-1, 1]) {
     const h = new THREE.Sprite(LIGHT_GLOW.head);
     h.position.set(sx * (W / 2 - 0.3), y, -L / 2 - 0.15);
-    h.scale.set(1.4, 1.4, 1);
+    h.scale.set(2.4, 2.4, 1);
     const t = new THREE.Sprite(LIGHT_GLOW.tail);
     t.position.set(sx * (W / 2 - 0.3), y + 0.05, L / 2 + 0.1);
-    t.scale.set(0.9, 0.9, 1);
+    t.scale.set(1.3, 1.3, 1);
     model.body.add(h, t);
   }
 }
