@@ -259,8 +259,8 @@ function treeGeometries(): THREE.BufferGeometry[] {
   };
   const merge = (gs: THREE.BufferGeometry[]) => mergeGeometries(gs.map((g) => (g.index ? g.toNonIndexed() : g)))!;
   // Nepravidelný lalok koruny: rozkmitané vrcholy.
-  const lobe = (r: number, x: number, y: number, z: number, seed: number) => {
-    const g = new THREE.IcosahedronGeometry(r, 1);
+  const lobe = (r: number, x: number, y: number, z: number, seed: number, detail = 1) => {
+    const g = new THREE.IcosahedronGeometry(r, detail);
     g.deleteAttribute('uv');
     const m = mergeVertices(g, 1e-3);
     const p = m.getAttribute('position');
@@ -273,7 +273,7 @@ function treeGeometries(): THREE.BufferGeometry[] {
     return colorize(out, W);
   };
   const cone = (r: number, h: number, y: number) => {
-    const g = new THREE.ConeGeometry(r, h, 8, 1, true).translate(0, y, 0);
+    const g = new THREE.ConeGeometry(r, h, 7, 1, true).translate(0, y, 0);
     return colorize(smooth(g), W);
   };
   const conifer = merge([
@@ -285,10 +285,10 @@ function treeGeometries(): THREE.BufferGeometry[] {
   const deciduous = merge([
     smooth(trunk(3.2, 0.17)),
     shade(lobe(2.7, 0, 5.5, 0, 1), 3.0, 8.6),
-    shade(lobe(1.9, 1.3, 6.6, 0.7, 2), 3.0, 8.6),
-    shade(lobe(1.8, -1.2, 6.2, -0.9, 3), 3.0, 8.6),
+    shade(lobe(1.9, 1.3, 6.6, 0.7, 2, 0), 3.0, 8.6),
+    shade(lobe(1.8, -1.2, 6.2, -0.9, 3, 0), 3.0, 8.6),
   ]);
-  const bush = merge([shade(lobe(1.0, 0, 0.6, 0, 4), -0.2, 1.4)]);
+  const bush = merge([shade(lobe(1.0, 0, 0.6, 0, 4, 0), -0.2, 1.4)]);
   return [conifer, deciduous, bush];
 }
 
