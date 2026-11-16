@@ -8,6 +8,7 @@ Terén je z výškových dat. Svět se stahuje průběžně kolem hráče, takž
 
 ## Co hra umí
 
+- **Vzhled budov podle RÚIAN**: počet podlaží, využití (rodinný dům, bytový dům, obchod, administrativa, průmysl, garáž), konstrukce (panel, cihla, dřevo) a rok dokončení určují fasádu – historická, moderní, panelová, kancelářská, hala, garáž, roubenka. **Skutečné obchody, restaurace a banky z OSM** mají výlohu a ceduli s názvem, v noci podsvícenou.
 - **Skutečné výšky budov** změřené z ČÚZK (DMP 1G − DMR 5G pod půdorysem), **skutečné počasí** (Open-Meteo) a čas.
 - **Přesný terén a vegetace z ČÚZK:** výškopis DMR 5G a stromy tam, kde skutečně rostou. Výška stromu se počítá z výšky porostu (DMP 1G − DMR 5G). Mimo republiku se použije Terrarium a lesy z OSM.
 - **Celá republika 1:1.** Dlaždice (~1,6 × 1,6 km) se načítají kolem hráče, terén až k horizontu se dotahuje hrubší vrstvou.
@@ -84,6 +85,7 @@ Při každém pushi do `main` GitHub Actions hru sestaví a nasadí na GitHub Pa
 
 - Mapová data © [přispěvatelé OpenStreetMap](https://www.openstreetmap.org/copyright), licence ODbL.
 - Vektorové dlaždice [OpenFreeMap](https://openfreemap.org) ve schématu [OpenMapTiles](https://openmaptiles.org).
+- Údaje o budovách: RÚIAN © [ČÚZK](https://ruian.cuzk.gov.cz) (stavební objekty, CC BY 4.0).
 - Výškopis a vegetace © [ČÚZK](https://geoportal.cuzk.cz) (DMR 5G, DMP 1G, služba ArcGIS ImageServer), licence CC BY 4.0.
 - Výškopis mimo ČR: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM, EU-DEM, GMTED a další zdroje).
 - Vyhledávání [Nominatim](https://nominatim.org) (jen na vyžádání hráče).

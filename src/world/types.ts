@@ -83,6 +83,11 @@ export interface TileData {
   panels?: MeshArrays;
   houses?: MeshArrays;
   halls?: MeshArrays;
+  /** Další fasády podle typu budovy (RÚIAN). */
+  facades?: Record<string, MeshArrays>;
+  /** Cedule obchodů a jejich atlas. */
+  signs?: MeshArrays;
+  signAtlas?: ImageBitmap;
   /** Pouliční lampy: x, y, z. */
   lamps?: Float32Array;
   /** x, y, z, měřítko, druh (0 = jehličnan, 1 = listnáč, 2 = keř). */

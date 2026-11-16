@@ -124,6 +124,57 @@ const CUZK = 'https://ags.cuzk.gov.cz/arcgis2/rest/services';
  * Rastr z ČÚZK (DMR 5G = terén, DMP 1G = povrch včetně vegetace) pro dlaždici.
  * Mřížka n×n má krajní body přesně v rozích dlaždice, takže sousední dlaždice navazují.
  */
+/** Budovy z RÚIAN (počet podlaží, využití, konstrukce, rok dokončení) pro dlaždici. */
+async function loadRuian(z: number, x: number, y: number, sizeM: number): Promise<RuianPt[]> {
+  const o = Math.PI * 6378137;
+  const S = (2 * o) / 2 ** z;
+  const x0 = x * S - o, x1 = (x + 1) * S - o, y0 = o - (y + 1) * S, y1 = o - y * S;
+  const url = 'https://ags.cuzk.gov.cz/arcgis/rest/services/RUIAN/Prohlizeci_sluzba_nad_daty_RUIAN/MapServer/3/query'
+    + `?geometry=${x0.toFixed(1)},${y0.toFixed(1)},${x1.toFixed(1)},${y1.toFixed(1)}&geometryType=esriGeometryEnvelope&inSR=3857`
+    + '&spatialRel=esriSpatialRelIntersects&outFields=pocetpodlazi,zpusobvyuzitikod,druhkonstrukcekod,dokonceni'
+    + '&returnGeometry=true&outSR=3857&maxAllowableOffset=4&geometryPrecision=0&f=json';
+  try {
+    let cache: Cache | null = null;
+    try {
+      cache = await caches.open('ruian-v1');
+    } catch {
+      cache = null;
+    }
+    let r = cache ? await cache.match(url) : undefined;
+    if (!r) {
+      const f = await fetchRetry(url, 2);
+      if (!f) return [];
+      r = f;
+      if (cache) void cache.put(url, f.clone()).catch(() => {});
+    }
+    const j = (await r.json()) as { features?: { attributes: Record<string, number | null>; geometry?: { rings: number[][][] } }[] };
+    const out: RuianPt[] = [];
+    // Merkátorské metry -> lokální metry dlaždice.
+    const k = sizeM / S;
+    for (const f of j.features ?? []) {
+      const ring = f.geometry?.rings?.[0];
+      if (!ring || ring.length < 3) continue;
+      let cx = 0, cy = 0;
+      const n = ring.length - 1 || 1;
+      for (let i = 0; i < n; i++) {
+        cx += ring[i][0];
+        cy += ring[i][1];
+      }
+      cx /= n;
+      cy /= n;
+      const a = f.attributes;
+      const yr = a.dokonceni != null ? new Date(a.dokonceni).getUTCFullYear() : 0;
+      out.push({
+        x: (cx - x0) * k, z: (y1 - cy) * k,
+        floors: a.pocetpodlazi ?? 0, use: a.zpusobvyuzitikod ?? 0, con: a.druhkonstrukcekod ?? 0, year: yr,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function loadCuzk(service: string, z: number, x: number, y: number, n: number): Promise<Float32Array | null> {
   const o = Math.PI * 6378137;
   const S = (2 * o) / 2 ** z;
@@ -548,6 +599,125 @@ interface BuildCtx {
   canopy: Float32Array | null;
   cn: number;
   size: number;
+  /** Další typy fasád podle RÚIAN (historická, moderní, kancelářská, garáž, dřevo). */
+  facades: Record<string, MeshBuf>;
+  /** Budovy z RÚIAN (lokální souřadnice středu). */
+  ruian: RuianPt[];
+  /** Obchody a provozovny z OSM. */
+  shopsPoi: ShopPoi[];
+  signs: MeshBuf;
+  atlas: SignAtlas | null;
+}
+
+interface RuianPt {
+  x: number;
+  z: number;
+  floors: number;
+  use: number;
+  con: number;
+  year: number;
+}
+
+interface ShopPoi {
+  name: string;
+  cls: string;
+  x: number;
+  z: number;
+  used: boolean;
+  /** Dostane ceduli (atlas má omezenou kapacitu – vybírají se nejvýznamnější). */
+  sign: boolean;
+  rank: number;
+}
+
+/** Atlas cedulí obchodů (jedna textura na dlaždici). */
+class SignAtlas {
+  static readonly W = 2048;
+  static readonly H = 1024;
+  static readonly CW = 204;
+  static readonly CH = 40;
+  canvas = new OffscreenCanvas(SignAtlas.W, SignAtlas.H);
+  ctx = this.canvas.getContext('2d')!;
+  n = 0;
+  get full() {
+    return this.n >= (SignAtlas.W / SignAtlas.CW) * Math.floor(SignAtlas.H / SignAtlas.CH);
+  }
+
+  /** Nakreslí ceduli, vrátí UV obdélník [u0, v0, u1, v1]. */
+  add(name: string, cls: string): number[] {
+    const cols = SignAtlas.W / SignAtlas.CW;
+    const cx = (this.n % cols) * SignAtlas.CW;
+    const cy = Math.floor(this.n / cols) * SignAtlas.CH;
+    this.n++;
+    const c = this.ctx;
+    const [bg, fg] = signColors(cls);
+    c.fillStyle = bg;
+    c.fillRect(cx + 1, cy + 1, SignAtlas.CW - 2, SignAtlas.CH - 2);
+    c.fillStyle = 'rgba(255,255,255,0.18)';
+    c.fillRect(cx + 1, cy + 1, SignAtlas.CW - 2, 4);
+    c.fillStyle = fg;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    let fs = 26;
+    c.font = `bold ${fs}px sans-serif`;
+    const text = name.length > 26 ? `${name.slice(0, 25)}…` : name;
+    while (c.measureText(text).width > SignAtlas.CW - 16 && fs > 12) {
+      fs -= 2;
+      c.font = `bold ${fs}px sans-serif`;
+    }
+    c.fillText(text, cx + SignAtlas.CW / 2, cy + SignAtlas.CH / 2 + 1);
+    return [cx / SignAtlas.W, cy / SignAtlas.H, (cx + SignAtlas.CW) / SignAtlas.W, (cy + SignAtlas.CH) / SignAtlas.H];
+  }
+}
+
+function signColors(cls: string): [string, string] {
+  if (['grocery', 'supermarket', 'convenience', 'greengrocer'].includes(cls)) return ['#2f7d3b', '#ffffff'];
+  if (['restaurant', 'fast_food', 'cafe', 'bar', 'pub', 'beer', 'ice_cream', 'biergarten'].includes(cls)) return ['#7a2f24', '#fff3d6'];
+  if (cls === 'pharmacy') return ['#1f9d55', '#ffffff'];
+  if (cls === 'bank') return ['#1d4f8f', '#ffffff'];
+  if (cls === 'bakery' || cls === 'butcher') return ['#a65a2a', '#ffffff'];
+  if (cls === 'hairdresser' || cls === 'beauty') return ['#6d3a7a', '#ffffff'];
+  if (cls === 'clothing_store' || cls === 'shoes') return ['#222428', '#f2f2f2'];
+  if (cls === 'hotel' || cls === 'lodging') return ['#3a3f75', '#ffd977'];
+  return ['#2f3a45', '#f6f1e6'];
+}
+
+/** Provozovny, které mají ceduli (OpenMapTiles poi.class). */
+const SHOP_CLASSES = new Set([
+  'shop', 'grocery', 'clothing_store', 'fast_food', 'restaurant', 'cafe', 'bar', 'pub', 'beer', 'bank', 'pharmacy',
+  'bakery', 'butcher', 'hairdresser', 'beauty', 'ice_cream', 'alcohol_shop', 'books', 'jewelry', 'shoes', 'florist',
+  'hardware', 'electronics', 'furniture', 'gift', 'optician', 'mobile_phone', 'toys', 'sports', 'pet', 'stationery',
+  'hotel', 'lodging', 'post', 'cinema', 'theatre', 'supermarket', 'convenience', 'doityourself', 'car', 'bicycle',
+]);
+
+/** Typ fasády podle RÚIAN (využití, konstrukce, rok dokončení). */
+function facadeFromRuian(r: RuianPt): string | null {
+  const panelCon = [4, 41, 42, 43].includes(r.con);
+  const woodCon = r.con === 6 || (r.con >= 61 && r.con <= 66);
+  if (r.use === 18) return 'garage';
+  if ([1, 12, 13, 21].includes(r.use)) return 'hall';
+  if (r.use === 7 || r.use === 8 || r.use === 2) return woodCon ? 'wood' : 'house';
+  if ([10, 14, 9, 20, 5, 15, 11].includes(r.use)) {
+    if (r.year >= 1990) return 'office';
+    if (r.year > 0 && r.year < 1945) return 'historic';
+    return panelCon ? 'panel' : null;
+  }
+  if (r.use === 6 || r.use === 3) {
+    if (panelCon) return 'panel';
+    if (r.year > 0 && r.year < 1945) return 'historic';
+    if (r.year >= 1995 || r.con === 11) return 'modern';
+    return null;
+  }
+  if (woodCon) return 'wood';
+  return null;
+}
+
+function pointInRing(x: number, z: number, ring: number[][]): boolean {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i], [xj, zj] = ring[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+  }
+  return c;
 }
 
 /** Skutečná výška budovy z ČÚZK: horní kvantil výšky povrchu nad terénem uvnitř půdorysu. */
@@ -583,6 +753,7 @@ function addWall(
   b: BuildCtx, ax: number, az: number, bx: number, bz: number, y0: number, y1: number, u0: number, col: number[],
   shopTop = 0,
   target?: MeshBuf,
+  floorH = 3.0,
 ): number {
   const dx = bx - ax;
   const dz = bz - az;
@@ -592,11 +763,11 @@ function addWall(
   const nz = -dx / len;
   const u1 = u0 + len / (3.3 * 4);
   const v0 = 0;
-  const v1 = (y1 - y0) / (3.0 * 4);
+  const v1 = (y1 - y0) / (floorH * 4);
   const w = target ?? b.walls;
   // Spodní pás s jemným zatmavením u země (náhrada ambient occlusion).
   const ym = Math.min(y1, y0 + 3.2);
-  const vm = (ym - y0) / (3.0 * 4);
+  const vm = (ym - y0) / (floorH * 4);
   const dark = col.map((c) => c * 0.62);
   const q = (ya: number, yb: number, va: number, vb: number, ca: number[], cb: number[]) => {
     w.vert(ax, ya, az, nx, 0, nz, u0, va, ca);
@@ -618,7 +789,7 @@ function addWall(
     S.vert(ax, y0, az, nx, 0, nz, su0, vs, sc);
     S.vert(ax, shopTop, az, nx, 0, nz, su0, 1, sc);
     S.vert(bx, shopTop, bz, nx, 0, nz, su1, 1, sc);
-    q(shopTop, y1, (shopTop - y0) / 12, v1, col, col);
+    q(shopTop, y1, (shopTop - y0) / (floorH * 4), v1, col, col);
     return u1;
   }
   q(y0, ym, v0, vm, dark, col);
@@ -841,6 +1012,60 @@ function roofBox(b: BuildCtx, cx: number, cz: number, ux: number, uz: number, hl
   }
 }
 
+function distToRing(x: number, z: number, ring: number[][]): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+    const dx = bx - ax, dz = bz - az;
+    const l2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+    best = Math.min(best, Math.hypot(ax + dx * t - x, az + dz * t - z));
+  }
+  return best;
+}
+
+/** Cedule s názvem provozovny na stěně nejbližší k bodu provozovny. */
+function addSign(b: BuildCtx, sp: ShopPoi, ring: number[][], y: number) {
+  if (!b.atlas || b.atlas.full) return;
+  let best = -1, bd = Infinity, bt = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [ax, az] = ring[i], [bx, bz] = ring[i + 1];
+    const dx = bx - ax, dz = bz - az;
+    const l2 = dx * dx + dz * dz;
+    if (l2 < 9) continue; // příliš krátká stěna
+    const t = Math.max(0, Math.min(1, ((sp.x - ax) * dx + (sp.z - az) * dz) / l2));
+    const d = Math.hypot(ax + dx * t - sp.x, az + dz * t - sp.z);
+    if (d < bd) {
+      bd = d;
+      best = i;
+      bt = t;
+    }
+  }
+  if (best < 0) return;
+  const [ax, az] = ring[best], [bx, bz] = ring[best + 1];
+  const len = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / len, uz = (bz - az) / len;
+  const nx = uz, nz = -ux; // ven z budovy (stejná konvence jako u zdí)
+  const w = Math.min(len - 0.6, 2.2 + sp.name.length * 0.22, 7.5);
+  const h = 0.75;
+  let c = bt * len;
+  c = Math.max(w / 2 + 0.3, Math.min(len - w / 2 - 0.3, c));
+  const cx = ax + ux * c + nx * 0.14, cz = az + uz * c + nz * 0.14;
+  const uv = b.atlas.add(sp.name, sp.cls);
+  const m = b.signs;
+  const p0 = [cx - ux * w / 2, cz - uz * w / 2], p1 = [cx + ux * w / 2, cz + uz * w / 2];
+  const col = [1, 1, 1];
+  // Pořadí tak, aby text nebyl zrcadlově (při pohledu zvenku).
+  m.vert(p1[0], y, p1[1], nx, 0, nz, uv[0], uv[3], col);
+  m.vert(p0[0], y, p0[1], nx, 0, nz, uv[2], uv[3], col);
+  m.vert(p0[0], y + h, p0[1], nx, 0, nz, uv[2], uv[1], col);
+  m.vert(p1[0], y, p1[1], nx, 0, nz, uv[0], uv[3], col);
+  m.vert(p0[0], y + h, p0[1], nx, 0, nz, uv[2], uv[1], col);
+  m.vert(p1[0], y + h, p1[1], nx, 0, nz, uv[0], uv[1], col);
+}
+
+const KIND_STATS: Record<string, number> = {};
+
 function buildBuildings(vt: VectorTile, b: BuildCtx) {
   const layer = vt.layers.building;
   if (!layer) return;
@@ -883,8 +1108,21 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       }
       if (!Number.isFinite(base)) continue;
       const ringM = o.slice(0, -1).map((q) => [q.x * s, q.y * s]);
-      // Výška: změřená z ČÚZK (pokud je k dispozici a dává smysl), jinak z OSM.
-      let ph = hgt;
+      // Údaje RÚIAN: budova, jejíž střed leží v půdorysu (největší počet podlaží).
+      let ru: RuianPt | null = null;
+      if (b.ruian.length) {
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const [x, z] of ringM) {
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+        }
+        for (const r of b.ruian) {
+          if (r.x < x0 || r.x > x1 || r.z < z0 || r.z > z1) continue;
+          if (!pointInRing(r.x, r.z, ringM)) continue;
+          if (!ru || r.floors > ru.floors) ru = r;
+        }
+      }
+      // Výška: změřená z ČÚZK (pokud je k dispozici a dává smysl), jinak z RÚIAN nebo OSM.
+      let ph = ru && ru.floors > 0 ? ru.floors * 3.1 + 0.6 : hgt;
       const meas = minH < 2.5 ? measuredHeight(b, ringM) : NaN;
       const measured = Number.isFinite(meas) && meas >= 2.2 && meas < 250;
       if (measured) ph = meas;
@@ -902,8 +1140,22 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
       if (bbP && measured) wallH = Math.max(2.4, ph - Math.min(7.5, bbP.hs * 0.8));
       const hgtEff = ph;
       const y0 = minH > 0 ? top + minH : base - 0.5;
-      // Výlohy: vyšší městské domy (ne přístavky, ne panelové věže).
-      const shopTop = minH < 2.5 && ph >= 9 && ph <= 40 && areaM > 120 && seed % 10 < 7 ? top + 4.3 : 0;
+      // Skutečné provozovny z OSM v budově nebo těsně u ní.
+      const myShops: ShopPoi[] = [];
+      if (minH < 2.5 && ph >= 5) {
+        for (const sp of b.shopsPoi) {
+          if (sp.used) continue;
+          if (myShops.length >= 3) break;
+          if (pointInRing(sp.x, sp.z, ringM) || distToRing(sp.x, sp.z, ringM) < 9) {
+            myShops.push(sp);
+            sp.used = true;
+          }
+        }
+      }
+      // Výlohy: skutečné obchody, jinak náhodně u vyšších městských domů bez údajů o využití.
+      const ruShop = ru ? [10, 5, 15, 20].includes(ru.use) : false;
+      const shopTop = minH < 2.5 && ph >= 5 && (myShops.length > 0 || ((ruShop || !ru) && ph >= 9 && ph <= 40 && areaM > 120 && seed % 10 < (ru ? 9 : 6)))
+        ? top + 4.3 : 0;
       const y1 = top + wallH;
       b.bpts.push(cx * s, cy * s, areaM * hgtEff);
       // Panelový dům: vysoký, hranatý, s plochou střechou.
@@ -912,17 +1164,32 @@ function buildBuildings(vt: VectorTile, b: BuildCtx) {
         const ob = obb(ringM);
         panel = !!ob && areaM / ob.area > 0.85 && ob.hl / Math.max(ob.hs, 1) > 1.6;
       }
-      // Typ fasády: hala (velká a nízká), rodinný dům (malý a nízký), jinak městský dům.
-      const hall = !panel && shopTop === 0 && areaM > 900 && ph < 16 && minH < 2.5;
-      const house = !panel && !hall && shopTop === 0 && areaM < 260 && ph < 9;
+      // Typ fasády: podle RÚIAN, jinak odhad z tvaru (hala, rodinný dům, městský dům).
+      let kind = ru ? facadeFromRuian(ru) : null;
+      if (kind === 'panel') panel = true;
+      else if (kind) panel = false;
+      if (!kind && panel) kind = 'panel';
+      if (!kind && shopTop === 0 && areaM > 900 && ph < 16 && minH < 2.5) kind = 'hall';
+      if (!kind && shopTop === 0 && areaM < 260 && ph < 9) kind = 'house';
+      const hall = kind === 'hall';
+      KIND_STATS[kind ?? (ru ? 'ru-plain' : 'plain')] = (KIND_STATS[kind ?? (ru ? 'ru-plain' : 'plain')] ?? 0) + 1;
+      const house = kind === 'house';
+      // Výška patra: z RÚIAN, historické domy mají vyšší patra.
+      const floorH = ru && ru.floors > 0 ? Math.min(4.6, Math.max(2.5, (wallH - (shopTop ? 1.3 : 0)) / ru.floors)) : kind === 'historic' ? 3.6 : 3.0;
+      const target = kind === 'panel' ? b.panels : hall ? b.halls : house ? b.houses : kind && b.facades[kind] ? b.facades[kind] : undefined;
+      const wallCol = hall && !custom ? HALL_COL[seed % HALL_COL.length]
+        : kind === 'office' || kind === 'wood' ? [1, 1, 1]
+        : kind === 'garage' ? [0.8, 0.8, 0.78] : col;
       for (const ring of [o, ...poly.holes]) {
         let u = 0;
         for (let i = 0; i < ring.length - 1; i++) {
           const ax = ring[i].x * s, az = ring[i].y * s, bx = ring[i + 1].x * s, bz = ring[i + 1].y * s;
-          u = addWall(b, ax, az, bx, bz, y0, y1, u, hall && !custom ? HALL_COL[seed % HALL_COL.length] : col, shopTop, panel ? b.panels : hall ? b.halls : house ? b.houses : undefined);
+          u = addWall(b, ax, az, bx, bz, y0, y1, u, wallCol, shopTop, target, floorH);
           if (minH < 2.5) b.edges.push(ax, az, bx, bz, y1 + (bbP ? 7 : 1));
         }
       }
+      // Cedule obchodů nad výlohou na nejbližší stěně.
+      for (const sp of myShops) if (sp.sign) addSign(b, sp, o.map((q) => [q.x * s, q.y * s]), top + 3.55);
       // Střecha: šikmá nad téměř obdélníkovým půdorysem, jinak plochá.
       let pitched = false;
       if (bbP) {
@@ -1652,6 +1919,7 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   const step = 256 / N;
   const cz = near && inCzBox(z, x, y);
   const dmrP = cz ? loadCuzk('dmr5g', z, x, y, CN) : Promise.resolve(null);
+  const ruianP = cz ? loadRuian(z, x, y, TILE_M * 2 ** (14 - z)) : Promise.resolve([] as RuianPt[]);
   const dmpP = cz && req.treeBudget > 0 ? loadCuzk('dmp1g', z, x, y, CN) : Promise.resolve(null);
   await sampler.prepare((x - margin) * scale, (y - margin) * scale, (x + 1 + margin) * scale, (y + 1 + margin) * scale);
   const dmr = await dmrP;
@@ -1695,9 +1963,32 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
   };
   if (near && vt) {
     const s = sizeM / EXTENT;
+    const ruian = await ruianP;
+    mark('ruian');
+    // Provozovny z OSM (poi) pro cedule.
+    const shopsPoi: ShopPoi[] = [];
+    const poi = vt.layers.poi;
+    if (poi) {
+      for (let i = 0; i < poi.length; i++) {
+        const f = poi.feature(i);
+        const cls = String(f.properties.class);
+        const name = f.properties.name;
+        if (!name || !SHOP_CLASSES.has(cls)) continue;
+        const g = f.loadGeometry()[0]?.[0];
+        if (!g) continue;
+        const sub = f.properties.subclass ? String(f.properties.subclass) : cls;
+        shopsPoi.push({ name: String(name), cls: cls === 'shop' || cls === 'grocery' ? sub : cls, x: g.x * s, z: g.y * s, used: false, sign: false, rank: Number(f.properties.rank) || 99 });
+      }
+    }
+    // Cedule dostanou nejvýznamnější provozovny (nižší rank), aby se vešly do atlasu.
+    const cap = (SignAtlas.W / SignAtlas.CW | 0) * Math.floor(SignAtlas.H / SignAtlas.CH);
+    [...shopsPoi].sort((a, b) => a.rank - b.rank).slice(0, cap).forEach((p) => (p.sign = true));
+    prof.poi = shopsPoi.length;
     const bctx: BuildCtx = {
       s, height, walls: new MeshBuf(), roofs: new MeshBuf(), edges: new FloatBuf(4096), bpts: new FloatBuf(1024), shops: new MeshBuf(), panels: new MeshBuf(), houses: new MeshBuf(), halls: new MeshBuf(),
       canopy, cn: CN, size: sizeM,
+      facades: { historic: new MeshBuf(), modern: new MeshBuf(), office: new MeshBuf(), garage: new MeshBuf(), wood: new MeshBuf() },
+      ruian, shopsPoi, signs: new MeshBuf(), atlas: shopsPoi.length ? new SignAtlas() : null,
     };
     buildBuildings(vt, bctx);
     mark('budovy');
@@ -1725,6 +2016,21 @@ async function build(req: TileRequest): Promise<{ data: TileData; transfer: Tran
     if (!rctx.sides.empty) data.bridgeSides = rctx.sides.arrays(false, false);
     if (!rctx.rails.empty) data.rails = rctx.rails.arrays(true, false);
     for (const m of [data.walls, data.roofs, data.roadsMarked, data.roadsPlain, data.paths, data.bridgeSides, data.rails, data.sidewalks, data.shops, data.panels, data.houses, data.halls]) addMesh(m);
+    prof.signs = bctx.atlas ? bctx.atlas.n : 0;
+    for (const [k, v] of Object.entries(KIND_STATS)) prof[`k_${k}`] = v;
+    for (const k of Object.keys(KIND_STATS)) delete KIND_STATS[k];
+    data.facades = {};
+    for (const [k, m] of Object.entries(bctx.facades)) {
+      if (m.empty) continue;
+      data.facades[k] = m.arrays(true, true);
+      addMesh(data.facades[k]);
+    }
+    if (!bctx.signs.empty && bctx.atlas) {
+      data.signs = bctx.signs.arrays(true, true);
+      addMesh(data.signs);
+      data.signAtlas = bctx.atlas.canvas.transferToImageBitmap();
+      transfer.push(data.signAtlas);
+    }
     let circles: number[] = [];
     if (req.treeBudget > 0) {
       const t = buildTrees(vt, sizeM, req.treeBudget, seed, height, canopy, CN);

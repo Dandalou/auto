@@ -595,6 +595,8 @@ export class Game {
     this.world.mats.panel.emissiveIntensity = this.env.night * 1.4;
     this.world.mats.house.emissiveIntensity = this.env.night * 1.3;
     this.world.mats.hall.emissiveIntensity = this.env.night * 0.6;
+    for (const m of Object.values(this.world.mats.facade)) m.emissiveIntensity = this.env.night * 1.4;
+    for (const m of this.world.signMats) m.emissiveIntensity = 0.15 + this.env.night * 1.1;
     this.world.mats.lamp.emissiveIntensity = this.env.night > 0.4 ? 2.5 : 0;
     this.world.mats.glow.opacity = Math.max(0, this.env.night - 0.3) * 1.2;
     this.world.setSeason(this.env.season);

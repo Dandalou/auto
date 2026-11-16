@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TILE_M, tileKey } from '../geo';
 import { gridHeight, type HeightGrid } from './heightgrid';
 import { RoadGraph } from './roadgraph';
-import { facadeTextures, hallTextures, houseTextures, panelTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
+import { facadeTextures, garageTextures, hallTextures, historicTextures, houseTextures, modernTextures, officeTextures, panelTextures, woodTextures, pathTexture, railTexture, roadTexture, shopTexture, sidewalkTexture } from './textures';
 import type { Colliders, MeshArrays, NamedPoint, PlacePoint, StreetLine, TileData, TileKind, TileRequest } from './types';
 import TileWorker from './tileWorker?worker';
 
@@ -318,12 +318,17 @@ export class World {
     panel: THREE.MeshStandardMaterial;
     house: THREE.MeshStandardMaterial;
     hall: THREE.MeshStandardMaterial;
+    /** Fasády podle typu budovy (RÚIAN). */
+    facade: Record<string, THREE.MeshStandardMaterial>;
+    /** Společné nastavení cedulí (každá dlaždice má vlastní kopii s atlasem). */
+    sign: THREE.MeshStandardMaterial;
     lamp: THREE.MeshStandardMaterial;
     glow: THREE.PointsMaterial;
   };
   season = 'léto';
   private lampGeo = lampGeometry();
   private treeMeshes = new Set<THREE.InstancedMesh>();
+  signMats = new Set<THREE.MeshStandardMaterial>();
   private treeGeo = treeGeometries();
   /** Jednodušší stromy pro vzdálenější dlaždice. */
   private treeGeoLow = lowTreeGeometries();
@@ -351,6 +356,20 @@ export class World {
       bridge: new THREE.MeshStandardMaterial({ color: 0x9a9893, roughness: 0.9, side: THREE.DoubleSide }),
       tree: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
       walk: roadMat(sidewalkTexture(), 'walk', 2),
+      facade: (() => {
+        const mk = (t: { map: THREE.Texture; emissive: THREE.Texture }, rough: number, metal = 0) => new THREE.MeshStandardMaterial({
+          vertexColors: true, map: t.map, emissiveMap: t.emissive, emissive: new THREE.Color(1, 0.85, 0.6),
+          emissiveIntensity: 0, roughness: rough, metalness: metal, side: THREE.DoubleSide,
+        });
+        return {
+          historic: mk(historicTextures(), 0.85),
+          modern: mk(modernTextures(), 0.7),
+          office: mk(officeTextures(), 0.25, 0.35),
+          garage: mk(garageTextures(), 0.6, 0.2),
+          wood: mk(woodTextures(), 0.9),
+        };
+      })(),
+      sign: new THREE.MeshStandardMaterial({ roughness: 0.5, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: 0.15, side: THREE.DoubleSide }),
       house: (() => {
         const t = houseTextures();
         return new THREE.MeshStandardMaterial({
@@ -637,6 +656,23 @@ export class World {
     add(d.panels, this.mats.panel, true, true, 'walls');
     add(d.houses, this.mats.house, true, true, 'walls');
     add(d.halls, this.mats.hall, true, true, 'walls');
+    for (const [k, m] of Object.entries(d.facades ?? {})) {
+      const mat = this.mats.facade[k];
+      if (mat) add(m, mat, true, true, 'walls');
+    }
+    if (d.signs && d.signAtlas) {
+      const tex = new THREE.Texture(d.signAtlas);
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      tex.needsUpdate = true;
+      const sm = this.mats.sign.clone();
+      sm.map = tex;
+      sm.emissiveMap = tex;
+      this.signMats.add(sm);
+      disposables.push(tex, { dispose: () => { sm.dispose(); this.signMats.delete(sm); d.signAtlas?.close(); } });
+      add(d.signs, sm, false, true, 'signs');
+    }
     add(d.rails, this.mats.rail, false, true, 'rails');
     add(d.bridgeSides, this.mats.bridge, false, true, 'bridges');
     if (d.trees && d.trees.length) {

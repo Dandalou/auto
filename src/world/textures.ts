@@ -201,6 +201,133 @@ export function hallTextures(): { map: THREE.CanvasTexture; emissive: THREE.Canv
   return { map: finish(a.c), emissive: finish(b.c) };
 }
 
+/** Pomocník: mřížka 4 × 4 buněk (1 buňka = 1 patro × 1 okenní osa). */
+function cells(draw: (ctx: CanvasRenderingContext2D, e: CanvasRenderingContext2D, x: number, y: number, c: number, i: number, j: number) => void, base = '#ffffff') {
+  const S = 256, c = 64;
+  const a = canvas(S, S);
+  const b = canvas(S, S);
+  a.ctx.fillStyle = base;
+  a.ctx.fillRect(0, 0, S, S);
+  b.ctx.fillStyle = '#000';
+  b.ctx.fillRect(0, 0, S, S);
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) draw(a.ctx, b.ctx, i * c, j * c, c, i, j);
+  return { map: finish(a.c), emissive: finish(b.c) };
+}
+
+function lit(e: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number) {
+  if (k % 10 < 4) {
+    e.fillStyle = k % 3 ? '#ffd58a' : '#fff0c8';
+    e.fillRect(x, y, w, h);
+  }
+}
+
+/** Historický činžák: vysoká okna s šambránou a nadokenní římsou, kordonové římsy. */
+export function historicTextures() {
+  return cells((a, e, x, y, c, i, j) => {
+    a.fillStyle = 'rgba(255,255,255,0.35)';
+    a.fillRect(x, y + c - 7, c, 4); // římsa
+    a.fillStyle = 'rgba(0,0,0,0.12)';
+    a.fillRect(x, y + c - 3, c, 3);
+    const ww = 22, wh = 36, wx = x + (c - ww) / 2, wy = y + 12;
+    a.fillStyle = 'rgba(255,255,255,0.55)';
+    a.fillRect(wx - 5, wy - 9, ww + 10, 6); // nadokenní římsa
+    a.fillRect(wx - 4, wy - 3, ww + 8, wh + 6); // šambrána
+    a.fillStyle = 'rgba(0,0,0,0.18)';
+    a.fillRect(wx - 5, wy - 3, ww + 10, 2);
+    a.fillStyle = '#34404c';
+    a.fillRect(wx, wy, ww, wh);
+    a.fillStyle = 'rgba(200,215,230,0.3)';
+    a.fillRect(wx, wy, ww * 0.45, wh * 0.5);
+    a.fillStyle = '#efe9dc';
+    a.fillRect(wx + ww / 2 - 1, wy, 2, wh);
+    a.fillRect(wx, wy + wh * 0.62, ww, 2);
+    a.fillStyle = 'rgba(255,255,255,0.5)';
+    a.fillRect(wx - 3, wy + wh + 2, ww + 6, 4); // parapet
+    lit(e, wx, wy, ww, wh, i * 7 + j * 3);
+  });
+}
+
+/** Moderní bytový dům: velká okna, šedé rámy, balkony místy. */
+export function modernTextures() {
+  return cells((a, e, x, y, c, i, j) => {
+    a.fillStyle = 'rgba(0,0,0,0.06)';
+    a.fillRect(x, y + c - 2, c, 2);
+    const ww = 46, wh = 38, wx = x + (c - ww) / 2, wy = y + 10;
+    a.fillStyle = '#4a4f55';
+    a.fillRect(wx - 2, wy - 2, ww + 4, wh + 4);
+    a.fillStyle = '#5f7486';
+    a.fillRect(wx, wy, ww, wh);
+    a.fillStyle = 'rgba(220,235,245,0.35)';
+    a.fillRect(wx, wy, ww * 0.4, wh);
+    a.fillStyle = '#4a4f55';
+    a.fillRect(wx + ww * 0.6, wy, 2, wh);
+    if ((i + j * 2) % 3 === 0) {
+      a.fillStyle = 'rgba(40,40,45,0.55)';
+      a.fillRect(wx - 4, wy + wh * 0.55, ww + 8, 3);
+      a.fillStyle = 'rgba(220,225,230,0.5)';
+      a.fillRect(wx - 4, wy + wh * 0.58, ww + 8, wh * 0.42);
+    }
+    lit(e, wx, wy, ww, wh, i * 5 + j * 7);
+  });
+}
+
+/** Kancelářská budova: prosklená fasáda s rastrem. */
+export function officeTextures() {
+  return cells((a, e, x, y, c, i, j) => {
+    a.fillStyle = '#8f9ea9';
+    a.fillRect(x, y, c, c);
+    const g = a.createLinearGradient(x, y, x + c, y + c);
+    g.addColorStop(0, 'rgba(255,255,255,0.28)');
+    g.addColorStop(1, 'rgba(0,0,0,0.12)');
+    a.fillStyle = g;
+    a.fillRect(x, y, c, c);
+    // Parapetní pás mezi patry (beton/kamenný obklad).
+    a.fillStyle = '#d6d8d6';
+    a.fillRect(x, y + c - 14, c, 14);
+    a.fillRect(x, y, 2, c);
+    a.fillRect(x + c / 2 - 1, y, 2, c - 6);
+    if ((i * 3 + j * 5) % 10 < 3) {
+      e.fillStyle = '#f2f6ff';
+      e.fillRect(x + 2, y, c - 2, c - 6);
+    }
+  }, '#8f9ea9');
+}
+
+/** Garáže: plechová vrata. */
+export function garageTextures() {
+  return cells((a, _e, x, y, c) => {
+    a.fillStyle = 'rgba(0,0,0,0.08)';
+    a.fillRect(x, y, c, c);
+    a.fillStyle = '#c9ccce';
+    a.fillRect(x + 6, y + 14, c - 12, c - 14);
+    a.fillStyle = 'rgba(0,0,0,0.15)';
+    for (let k = y + 18; k < y + c; k += 6) a.fillRect(x + 6, k, c - 12, 2);
+  });
+}
+
+/** Dřevostavba / roubenka: vodorovné trámy a malá okna. */
+export function woodTextures() {
+  return cells((a, e, x, y, c, i, j) => {
+    for (let k = 0; k < c; k += 8) {
+      a.fillStyle = k % 16 ? '#8a6243' : '#7a5538';
+      a.fillRect(x, y + k, c, 7);
+      a.fillStyle = 'rgba(0,0,0,0.25)';
+      a.fillRect(x, y + k + 7, c, 1);
+    }
+    if ((i + j) % 2 === 0) {
+      const wx = x + 20, wy = y + 18;
+      a.fillStyle = '#f3efe6';
+      a.fillRect(wx - 2, wy - 2, 28, 28);
+      a.fillStyle = '#34404c';
+      a.fillRect(wx, wy, 24, 24);
+      a.fillStyle = '#f3efe6';
+      a.fillRect(wx + 11, wy, 2, 24);
+      a.fillRect(wx, wy + 11, 24, 2);
+      lit(e, wx, wy, 24, 24, i * 3 + j);
+    }
+  }, '#8a6243');
+}
+
 /** Dlažba chodníku: u = příčně (2,4 m), v = délka (8 m na opakování). */
 export function sidewalkTexture(): THREE.CanvasTexture {
   const { c, ctx } = canvas(64, 256);
